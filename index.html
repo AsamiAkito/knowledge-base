@@ -1,0 +1,579 @@
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>我的空间 · 动态 / 知识库 / 收藏</title>
+
+<!--
+  ============================================================
+   个人空间 —— 三个系统合一，单文件、零依赖、可离线
+  ------------------------------------------------------------
+    · 动态   (feed)  —— 日常记录，下滑信息流，可点赞 / 评论 / 点进详情
+    · 知识库 (kb)    —— 左侧文件夹树，中间正文，右侧便签(指向高亮段落)
+    · 收藏   (fav)   —— 左侧收藏夹，中间收藏内容(可添加 B站/YT 等并内嵌播放)
+  ------------------------------------------------------------
+   内容都在文件底部的 DATA 里书写(Markdown)。
+   点赞、评论、新增收藏等操作自动存到浏览器 localStorage。
+  ============================================================
+-->
+
+<style>
+  :root{
+    --bg:#ffffff; --bg-soft:#f6f7f9; --card:#ffffff;
+    --text:#1a1c20; --text-soft:#5c6470; --text-dim:#8a929e;
+    --border:#e8eaee; --border-s:#eef0f3;
+    --accent:#3b5bdb; --accent-so:#edf1ff;
+    --like:#e0245e;
+    --shadow:0 1px 2px rgba(20,24,31,.04),0 8px 24px rgba(20,24,31,.05);
+    --radius:14px;
+    --mono:"SF Mono","JetBrains Mono","Cascadia Code",ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei","Hiragino Sans GB",Roboto,Helvetica,Arial,sans-serif;
+  }
+  :root[data-theme="dark"]{
+    --bg:#101216; --bg-soft:#16181d; --card:#181b21;
+    --text:#e6e9ee; --text-soft:#a4abb6; --text-dim:#6c7480;
+    --border:#262a32; --border-s:#21252c;
+    --accent:#7c93f5; --accent-so:#1b2030;
+    --like:#f2578c;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 30px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;font-family:var(--sans);background:var(--bg);color:var(--text);
+    line-height:1.7;letter-spacing:.01em;-webkit-font-smoothing:antialiased;
+    transition:background .25s,color .25s}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  button{font-family:inherit}
+
+  header.site{position:sticky;top:0;z-index:40;
+    background:color-mix(in srgb,var(--bg) 84%,transparent);
+    backdrop-filter:saturate(1.4) blur(12px);-webkit-backdrop-filter:saturate(1.4) blur(12px);
+    border-bottom:1px solid var(--border-s)}
+  .site-row{max-width:1180px;margin:0 auto;padding:0 22px;height:60px;
+    display:flex;align-items:center;gap:18px}
+  .brand{display:flex;align-items:baseline;gap:8px;font-weight:700;font-size:16px;
+    letter-spacing:.02em;color:var(--text);cursor:pointer}
+  .brand:hover{text-decoration:none}
+  .brand .dot{color:var(--accent)}
+  nav.tabs{display:flex;gap:4px}
+  nav.tabs button{border:0;background:transparent;color:var(--text-soft);cursor:pointer;
+    padding:8px 15px;border-radius:9px;font-size:14.5px;font-weight:600;transition:all .15s}
+  nav.tabs button:hover{color:var(--text);background:var(--bg-soft)}
+  nav.tabs button.active{color:var(--text);background:var(--bg-soft)}
+  nav.tabs button.active::after{content:"";display:block;height:2px;border-radius:2px;
+    background:var(--accent);margin:6px 6px -8px}
+  .spacer{flex:1}
+  .icon-btn{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;
+    border-radius:9px;border:1px solid var(--border);background:var(--card);color:var(--text-soft);
+    cursor:pointer;font-size:15px;transition:all .15s}
+  .icon-btn:hover{color:var(--text);border-color:var(--text-dim)}
+
+  main{max-width:1180px;margin:0 auto;padding:26px 22px 80px}
+
+  /* 动态 feed */
+  .feed{max-width:640px;margin:0 auto}
+  .feed-h{margin:4px 0 20px}
+  .feed-h h1{margin:0 0 4px;font-size:24px;letter-spacing:-.01em}
+  .feed-h p{margin:0;color:var(--text-soft);font-size:14px}
+  .post{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+    padding:18px 20px;margin-bottom:16px;transition:border-color .15s,box-shadow .2s}
+  .post:hover{border-color:var(--text-dim);box-shadow:var(--shadow)}
+  .post .top{display:flex;align-items:center;gap:11px;margin-bottom:11px}
+  .avatar{width:38px;height:38px;border-radius:50%;flex:none;display:flex;align-items:center;
+    justify-content:center;font-size:18px;background:var(--accent-so);color:var(--accent)}
+  .post .who{font-weight:600;font-size:14.5px}
+  .post .when{font-size:12.5px;color:var(--text-dim)}
+  .post .body{font-size:15px;cursor:pointer}
+  .post .body p{margin:0 0 .7em}
+  .post .body .clamp{display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden}
+  .imgs{display:grid;gap:6px;margin:12px 0 2px;grid-template-columns:repeat(3,1fr)}
+  .imgs.one{grid-template-columns:1fr;max-width:360px}
+  .imgs.two{grid-template-columns:1fr 1fr}
+  .imgs .ph{aspect-ratio:1;border-radius:10px;background:linear-gradient(135deg,var(--accent-so),var(--bg-soft));
+    display:flex;align-items:center;justify-content:center;font-size:26px;color:var(--text-dim);overflow:hidden}
+  .imgs .ph img{width:100%;height:100%;object-fit:cover}
+  .actions{display:flex;gap:22px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border-s)}
+  .act{display:inline-flex;align-items:center;gap:7px;color:var(--text-dim);cursor:pointer;
+    font-size:13.5px;border:0;background:transparent;transition:color .15s;padding:0}
+  .act:hover{color:var(--text)}
+  .act.liked{color:var(--like)}
+  .act svg{width:17px;height:17px}
+  .act.liked svg{fill:var(--like);stroke:var(--like)}
+  .pop{animation:pop .3s}
+  @keyframes pop{0%{transform:scale(.8)}50%{transform:scale(1.25)}100%{transform:scale(1)}}
+
+  .comments{margin-top:14px;padding-top:14px;border-top:1px solid var(--border-s)}
+  .cmt{display:flex;gap:10px;margin-bottom:12px}
+  .cmt .avatar{width:30px;height:30px;font-size:14px}
+  .cmt .c-main{flex:1;min-width:0}
+  .cmt .c-name{font-size:13px;font-weight:600}
+  .cmt .c-name span{font-weight:400;color:var(--text-dim);margin-left:8px;font-size:12px}
+  .cmt .c-text{font-size:14px;margin-top:1px;word-wrap:break-word}
+  .cmt-form{display:flex;gap:9px;margin-top:6px}
+  .cmt-form input{flex:1;border:1px solid var(--border);background:var(--bg-soft);border-radius:10px;
+    padding:9px 13px;font:inherit;font-size:14px;color:var(--text);outline:0}
+  .cmt-form input:focus{border-color:var(--accent);background:var(--card)}
+  .btn{border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:10px;
+    padding:9px 16px;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;transition:opacity .15s}
+  .btn:hover{opacity:.9}
+  .btn.ghost{background:transparent;color:var(--accent)}
+  .backlink{display:inline-flex;align-items:center;gap:6px;margin:0 0 20px;color:var(--text-soft);
+    font-size:14px;cursor:pointer;border:0;background:transparent;padding:0}
+  .backlink:hover{color:var(--text)}
+
+  /* 知识库 */
+  .kb{display:grid;grid-template-columns:250px minmax(0,1fr) 270px;gap:26px;align-items:start}
+  .panel{background:var(--card);border:1px solid var(--border);border-radius:var(--radius)}
+  .kb-tree{position:sticky;top:78px;padding:12px 10px;max-height:calc(100vh - 100px);overflow:auto}
+  .kb-tree .ph-title{font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--text-dim);
+    padding:6px 10px 10px;text-transform:uppercase}
+  .node{user-select:none}
+  .node .row{display:flex;align-items:center;gap:6px;padding:6px 9px;border-radius:8px;cursor:pointer;
+    font-size:14px;color:var(--text-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .node .row:hover{background:var(--bg-soft);color:var(--text)}
+  .node .row.sel{background:var(--accent-so);color:var(--accent);font-weight:600}
+  .node .row .ic{width:16px;text-align:center;flex:none;font-size:12px;color:var(--text-dim)}
+  .node .row.sel .ic{color:var(--accent)}
+
+  .kb-main{padding:26px 30px;min-height:60vh}
+  .crumb{font-size:12.5px;color:var(--text-dim);margin-bottom:10px}
+  .crumb .dot{opacity:.6;margin:0 3px}
+  .kb-main h1.doc{margin:0 0 8px;font-size:26px;letter-spacing:-.01em}
+  .doc-meta{font-size:12.5px;color:var(--text-dim);margin-bottom:22px;padding-bottom:20px;border-bottom:1px solid var(--border-s)}
+  .doc-meta .t{background:var(--bg-soft);padding:2px 8px;border-radius:6px;margin-right:6px}
+
+  .kb-notes{position:sticky;top:78px;padding:16px;max-height:calc(100vh - 100px);overflow:auto}
+  .kb-notes .ph-title{font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--text-dim);
+    margin-bottom:12px;text-transform:uppercase}
+  .sticky{background:linear-gradient(180deg,#fff8d6,#fdf3b8);color:#4a3f14;border-radius:10px;
+    padding:11px 13px;font-size:13.5px;line-height:1.6;margin-bottom:12px;cursor:pointer;
+    box-shadow:0 2px 8px rgba(120,100,20,.12);border:1px solid rgba(150,120,20,.15);transition:transform .12s}
+  :root[data-theme="dark"] .sticky{background:linear-gradient(180deg,#3a3413,#332d10);color:#e8dca0;border-color:#4a4118}
+  .sticky:hover{transform:translateY(-2px)}
+  .sticky .n{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;
+    border-radius:50%;background:rgba(150,120,20,.22);font-size:11px;font-weight:700;margin-right:7px}
+  .kb-notes .hint{font-size:12.5px;color:var(--text-dim)}
+
+  mark.hl{background:rgba(255,214,80,.4);border-radius:3px;padding:.05em .15em;cursor:pointer;
+    box-decoration-break:clone;-webkit-box-decoration-break:clone}
+  :root[data-theme="dark"] mark.hl{background:rgba(230,190,70,.22);color:inherit}
+  mark.hl:hover,mark.hl.flash{background:rgba(255,200,40,.75)}
+  .sticky.flash{transform:scale(1.04);box-shadow:0 4px 16px rgba(180,140,20,.35)}
+
+  /* 收藏 */
+  .fav{display:grid;grid-template-columns:236px minmax(0,1fr);gap:26px;align-items:start}
+  .fav-side{position:sticky;top:78px;padding:12px 10px}
+  .fav-side .ph-title{font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--text-dim);
+    padding:6px 10px 10px;text-transform:uppercase}
+  .folder{display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:10px;cursor:pointer;transition:background .15s}
+  .folder:hover{background:var(--bg-soft)}
+  .folder.sel{background:var(--accent-so)}
+  .folder .thumb{width:44px;height:34px;border-radius:7px;flex:none;overflow:hidden;
+    background:linear-gradient(135deg,var(--accent-so),var(--bg-soft));display:flex;align-items:center;justify-content:center;font-size:17px}
+  .folder .thumb img{width:100%;height:100%;object-fit:cover}
+  .folder .f-name{font-size:14px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .folder.sel .f-name{color:var(--accent)}
+  .folder .f-count{font-size:12px;color:var(--text-dim)}
+
+  .fav-main-head{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+  .fav-main-head h1{margin:0;font-size:22px}
+  .fav-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
+  .fcard{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;cursor:pointer;
+    transition:border-color .15s,transform .12s,box-shadow .2s}
+  .fcard:hover{border-color:var(--text-dim);box-shadow:var(--shadow);transform:translateY(-2px)}
+  .fcard .cover{aspect-ratio:16/10;position:relative;overflow:hidden;
+    background:linear-gradient(135deg,var(--accent-so),var(--bg-soft));display:flex;align-items:center;justify-content:center;font-size:34px}
+  .fcard .cover img{width:100%;height:100%;object-fit:cover}
+  .fcard .src{position:absolute;left:8px;top:8px;font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;
+    background:rgba(0,0,0,.6);color:#fff;letter-spacing:.03em}
+  .fcard .play{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    color:#fff;font-size:38px;text-shadow:0 2px 10px rgba(0,0,0,.5);opacity:.9}
+  .fcard .info{padding:11px 13px}
+  .fcard .info .t{font-size:14px;font-weight:600;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .fcard .info .u{font-size:12px;color:var(--text-dim);margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .embed-wrap{background:#000;border-radius:12px;overflow:hidden;aspect-ratio:16/9;margin-bottom:16px}
+  .embed-wrap iframe{width:100%;height:100%;border:0;display:block}
+
+  .modal-bg{position:fixed;inset:0;background:rgba(10,12,16,.5);z-index:60;display:flex;align-items:center;justify-content:center;padding:20px}
+  .modal{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px;width:100%;max-width:440px;box-shadow:var(--shadow)}
+  .modal h3{margin:0 0 4px;font-size:18px}
+  .modal p.sub{margin:0 0 18px;color:var(--text-soft);font-size:13px}
+  .field{margin-bottom:14px}
+  .field label{display:block;font-size:12.5px;color:var(--text-soft);margin-bottom:6px;font-weight:600}
+  .field input,.field select{width:100%;border:1px solid var(--border);background:var(--bg-soft);border-radius:10px;
+    padding:10px 13px;font:inherit;font-size:14px;color:var(--text);outline:0}
+  .field input:focus,.field select:focus{border-color:var(--accent);background:var(--card)}
+  .modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}
+
+  .empty{text-align:center;color:var(--text-dim);padding:60px 0}
+  .md p{margin:0 0 1.05em}
+  .md h1,.md h2,.md h3{line-height:1.35;letter-spacing:-.01em;margin:1.7em 0 .7em}
+  .md h1{font-size:24px}.md h2{font-size:20px}.md h3{font-size:17px}
+  .md ul,.md ol{margin:0 0 1.05em;padding-left:1.5em}.md li{margin:.3em 0}
+  .md a{text-decoration:underline;text-underline-offset:2px}
+  .md img{max-width:100%;border-radius:10px}
+  .md hr{border:0;border-top:1px solid var(--border);margin:2em 0}
+  .md blockquote{margin:0 0 1.05em;padding:2px 16px;color:var(--text-soft);border-left:3px solid var(--accent);
+    background:var(--bg-soft);border-radius:0 8px 8px 0}
+  .md blockquote p:last-child{margin-bottom:0}
+  .md code{font:.875em/1.5 var(--mono);background:var(--bg-soft);padding:.15em .4em;border-radius:5px;border:1px solid var(--border-s)}
+  .md pre{background:var(--bg-soft);border:1px solid var(--border);border-radius:11px;padding:15px 16px;overflow-x:auto;margin:0 0 1.2em}
+  .md pre code{background:none;border:0;padding:0;font-size:13.5px}
+  .md table{border-collapse:collapse;width:100%;margin:0 0 1.2em;font-size:14.5px}
+  .md th,.md td{border:1px solid var(--border);padding:8px 12px;text-align:left}
+  .md th{background:var(--bg-soft);font-weight:600}
+
+  @media(max-width:1040px){
+    .kb{grid-template-columns:220px minmax(0,1fr)} .kb-notes{display:none}
+  }
+  @media(max-width:720px){
+    .kb{grid-template-columns:1fr} .kb-tree{position:static;max-height:260px;margin-bottom:16px}
+    .fav{grid-template-columns:1fr} .fav-side{position:static;margin-bottom:16px}
+    nav.tabs button{padding:8px 11px}
+  }
+</style>
+
+<header class="site">
+  <div class="site-row">
+    <div class="brand" data-action="view" data-view="feed">我的空间<span class="dot">.</span></div>
+    <nav class="tabs" id="tabs">
+      <button data-action="view" data-view="feed">动态</button>
+      <button data-action="view" data-view="kb">知识库</button>
+      <button data-action="view" data-view="fav">我的收藏</button>
+    </nav>
+    <div class="spacer"></div>
+    <button class="icon-btn" id="themeBtn" title="切换主题" data-action="theme">🌙</button>
+  </div>
+</header>
+
+<main id="app"></main>
+
+
+<!-- ============================================================
+     内容区：在这里书写你的动态 / 知识库 / 收藏
+     ============================================================ -->
+<script>
+/* 动态：{ id, date, text(Markdown), images?:[url或emoji] } */
+const FEED = [
+  { id:"p3", date:"2026-08-11 21:40",
+    text:"搭好了自己的三合一空间：**动态**发日常、**知识库**存系统笔记、**收藏**收好东西。\n\n整个站点就一个 `index.html`，双击就开，不用联网也不用构建。点赞和评论会存在本地。" },
+  { id:"p2", date:"2026-08-10 12:05",
+    text:"> 你把注意力放在哪里，你就成为什么样的人。\n\n今天的一点感想：专注不是刻意用力地集中，而是**减少需要做选择的时刻**——把环境和下一步提前准备好，真正开始时就不必再消耗意志力。",
+    images:["🌅","📖","☕"] },
+  { id:"p1", date:"2026-08-08 09:12",
+    text:"遇到卡住的问题，我常用三个提问把它拆小：\n\n1. 真正要解决的是什么？\n2. 最小可验证的一步是什么？\n3. 最坏会怎样？\n\n大多数不知道从哪开始，本质是问题还太大。",
+    images:["💡"] },
+];
+/* 预置示例评论(可留空 [])：{ feed:动态id, name, text, when } */
+const SEED_COMMENTS = [
+  { feed:"p2", name:"路过的我", text:"说得好，环境设计比意志力靠谱多了。", when:"08-10" },
+];
+
+/* 知识库：folder 有 children；file 有 body(Markdown) 和 notes(便签)
+   正文里用 ==文字== 标记高亮，notes 按顺序对应第 1、2… 个高亮 */
+const KB = [
+  { type:"folder", name:"技术笔记", children:[
+    { type:"folder", name:"前端", children:[
+      { type:"file", name:"CSS Grid 布局", tags:["CSS","布局"],
+        notes:[
+          { text:"fr 是剩余空间的一份，比百分比好用，会自动扣掉 gap。" },
+          { text:"auto-fill 与 auto-fit：列不够时前者留空轨道，后者拉伸填满。" },
+        ],
+        body:"Grid 是二维布局系统，同时控制行与列。\n\n## 定义网格\n容器上写 `display:grid`，再用 `grid-template-columns` 定义列：\n\n```css\n.grid{\n  display:grid;\n  grid-template-columns:repeat(3,1fr);\n  gap:16px;\n}\n```\n\n==`1fr` 表示剩余空间的一份==，三列就是三等分，而且 `gap` 会被自动扣除，不用像百分比那样自己算。\n\n## 响应式一行搞定\n\n```css\ngrid-template-columns:repeat(auto-fill,minmax(220px,1fr));\n```\n\n==`auto-fill` 会保留空轨道，`auto-fit` 会压缩空轨道、让已有列拉伸填满==。想让卡片撑满就用 auto-fit。" },
+      { type:"file", name:"防抖与节流", tags:["JavaScript"],
+        notes:[ { text:"记忆法：防抖=等你说完再回答；节流=每隔几秒才回答一次。" } ],
+        body:"两个都是控制高频事件触发频率的技巧。\n\n- ==防抖(debounce)：事件停止 N 毫秒后才执行==，适合搜索输入。\n- 节流(throttle)：每 N 毫秒最多执行一次，适合滚动、resize。\n\n```js\nfunction debounce(fn, wait){\n  let t;\n  return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), wait); };\n}\n```" },
+    ]},
+    { type:"folder", name:"工具", children:[
+      { type:"file", name:"Git 常用命令", tags:["Git"],
+        body:"```bash\ngit switch -c feature   # 新建并切换分支\ngit restore file        # 撤销工作区改动\ngit commit --amend      # 修改上一次提交\n```\n\n> 提交信息写清为什么改，比写改了什么更值钱。" },
+    ]},
+  ]},
+  { type:"folder", name:"读书", children:[
+    { type:"file", name:"关于专注 · 摘录", tags:["阅读","思考"],
+      notes:[ { text:"这句可以贴在显示器上。" } ],
+      body:"==你把注意力放在哪里，你就成为什么样的人。==\n\n减少选择的时刻，比强行集中更有效。清单、环境、下一步——都提前准备好。" },
+  ]},
+  { type:"file", name:"README · 怎么用这个知识库", tags:["说明"],
+    body:"左边是文件夹树，点文件在这里看正文；正文里的 ==黄色高亮== 在右边有对应便签。\n\n在文件底部的 `KB` 数组里新增 `{type:\"file\", …}` 即可添加一篇。" },
+];
+
+/* 收藏：{ name, cover(emoji或图片url), items:[ {title, url} ] }
+   url 支持 YouTube / Bilibili(自动识别并内嵌播放) 及任意网页 */
+const FAV = [
+  { name:"稍后再看", cover:"🎬", items:[
+    { title:"Grid 布局完整教程", url:"https://www.youtube.com/watch?v=rg7Fvvl3taU" },
+    { title:"【纪录片】神奇的材料科学", url:"https://www.bilibili.com/video/BV1GJ411x7h7" },
+  ]},
+  { name:"设计灵感", cover:"🎨", items:[
+    { title:"Excalidraw — 手绘风白板", url:"https://excalidraw.com/" },
+    { title:"MDN Web Docs", url:"https://developer.mozilla.org/" },
+  ]},
+  { name:"想读的文章", cover:"📚", items:[
+    { title:"深入理解 Flexbox", url:"https://css-tricks.com/snippets/css/a-guide-to-flexbox/" },
+  ]},
+];
+</script>
+
+
+<!-- ============================================================
+     程序逻辑（一般不用改）
+     ============================================================ -->
+<script>
+const $ = (s,r=document)=>r.querySelector(s);
+const app = $("#app");
+const esc = s => (s==null?"":String(s)).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+const KEY="myspace-store";
+let store = load();
+function load(){ try{return JSON.parse(localStorage.getItem(KEY))||{}}catch(e){return{}} }
+function save(){ try{localStorage.setItem(KEY,JSON.stringify(store))}catch(e){} }
+store.likes  = store.likes  || {};
+store.cmts   = store.cmts   || {};
+store.favAdd = store.favAdd || [];
+
+function applyTheme(t){ document.documentElement.setAttribute("data-theme",t);
+  $("#themeBtn").textContent=t==="dark"?"☀️":"🌙"; try{localStorage.setItem("ms-theme",t)}catch(e){} }
+(function(){ let t; try{t=localStorage.getItem("ms-theme")}catch(e){}
+  if(!t) t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"; applyTheme(t); })();
+
+/* 极简 Markdown（含 ==高亮== ） */
+let _hl=0;
+function md(src){
+  const blocks=[];
+  src=src.replace(/```(\w*)\n([\s\S]*?)```/g,function(_,l,c){blocks.push('<pre><code>'+esc(c.replace(/\n$/,""))+'</code></pre>');return "\nCBLK"+(blocks.length-1)+"CBLK\n";});
+  const inline=t=>esc(t)
+    .replace(/==([^=]+)==/g,(_,x)=>{_hl++;return '<mark class="hl" id="hl-'+_hl+'" data-action="kb-hl" data-n="'+_hl+'">'+x+'</mark>';})
+    .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g,'<img alt="$1" src="$2">')
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>')
+    .replace(/`([^`]+)`/g,(_,c)=>"<code>"+c+"</code>")
+    .replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>")
+    .replace(/\*([^*]+)\*/g,"<em>$1</em>");
+  const lines=src.split("\n"); let html="",i=0;
+  const list=(tag,items)=>"<"+tag+">"+items.map(x=>"<li>"+inline(x)+"</li>").join("")+"</"+tag+">";
+  const isBlock=s=>/^\s*(#{1,3}\s|>|[-*]\s|\d+\.\s|---\s*$)/.test(s)||/^CBLK\d+CBLK$/.test(s.trim())||/^\s*$/.test(s);
+  while(i<lines.length){
+    let ln=lines[i];
+    let bm=ln.trim().match(/^CBLK(\d+)CBLK$/);
+    if(bm){html+=blocks[+bm[1]];i++;continue;}
+    if(/^\s*$/.test(ln)){i++;continue;}
+    let m;
+    if(m=ln.match(/^(#{1,3})\s+(.*)$/)){html+="<h"+m[1].length+">"+inline(m[2])+"</h"+m[1].length+">";i++;continue;}
+    if(/^\s*---\s*$/.test(ln)){html+="<hr>";i++;continue;}
+    if(/^\s*>\s?/.test(ln)){let b=[];while(i<lines.length&&/^\s*>\s?/.test(lines[i])){b.push(lines[i].replace(/^\s*>\s?/,""));i++;}html+="<blockquote>"+md(b.join("\n"))+"</blockquote>";continue;}
+    if(/^\s*[-*]\s+/.test(ln)){let it=[];while(i<lines.length&&/^\s*[-*]\s+/.test(lines[i])){it.push(lines[i].replace(/^\s*[-*]\s+/,""));i++;}html+=list("ul",it);continue;}
+    if(/^\s*\d+\.\s+/.test(ln)){let it=[];while(i<lines.length&&/^\s*\d+\.\s+/.test(lines[i])){it.push(lines[i].replace(/^\s*\d+\.\s+/,""));i++;}html+=list("ol",it);continue;}
+    let b=[];while(i<lines.length&&!isBlock(lines[i])){b.push(lines[i]);i++;}
+    html+="<p>"+inline(b.join("\n")).replace(/\n/g,"<br>")+"</p>";
+  }
+  return html;
+}
+
+let state={view:"feed", feedOpen:null, kbFile:null, favFolder:0, favItem:null, expanded:new Set()};
+
+const kbIndex={}; let _fid=0;
+(function indexKB(nodes,path){nodes.forEach(n=>{ if(n.type==="folder"){n._path=path.concat(n.name);state.expanded.add(n._path.join("/"));indexKB(n.children||[],n._path);} else {n._id="f"+(_fid++);n._path=path.concat(n.name);kbIndex[n._id]=n;} });})(KB,[]);
+state.kbFile = Object.keys(kbIndex)[0];
+
+function setView(v){ state.view=v; state.feedOpen=null; state.favItem=null; render(); window.scrollTo(0,0); }
+
+/* 动态 */
+function feedComments(id){ return SEED_COMMENTS.filter(c=>c.feed===id).map(c=>({name:c.name,text:c.text,when:c.when})).concat(store.cmts[id]||[]); }
+function likeCount(id){ const base=(id.charCodeAt(1)*7)%40+3; return base+(store.likes[id]?1:0); }
+
+function postHTML(p,full){
+  const liked=store.likes[p.id];
+  const cs=feedComments(p.id);
+  const imgs=(p.images||[]);
+  const imgHTML=imgs.length?'<div class="imgs '+(imgs.length===1?'one':imgs.length===2?'two':'')+'">'+imgs.map(x=>'<div class="ph">'+(/^https?:/.test(x)?'<img src="'+esc(x)+'" alt="">':esc(x))+'</div>').join("")+'</div>':"";
+  const body='<div class="body '+(full?'':'clamp')+'" data-action="feed-open" data-id="'+p.id+'">'+md(p.text)+'</div>';
+  const actions='<div class="actions">'
+    +'<button class="act '+(liked?'liked':'')+'" data-action="feed-like" data-id="'+p.id+'">'
+    +'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>'
+    +'<span>'+likeCount(p.id)+'</span></button>'
+    +'<button class="act" data-action="feed-open" data-id="'+p.id+'">'
+    +'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
+    +'<span>'+(cs.length||'评论')+'</span></button></div>';
+  let comments="";
+  if(full){
+    const clist=cs.map(c=>'<div class="cmt"><div class="avatar">'+esc((c.name||'我')[0])+'</div>'
+      +'<div class="c-main"><div class="c-name">'+esc(c.name||'我')+'<span>'+esc(c.when||'')+'</span></div>'
+      +'<div class="c-text">'+esc(c.text)+'</div></div></div>').join("");
+    comments='<div class="comments">'+(clist||'<div class="hint" style="color:var(--text-dim);font-size:13px;margin-bottom:12px">还没有评论，来说两句 👇</div>')
+      +'<form class="cmt-form" data-action="feed-comment" data-id="'+p.id+'">'
+      +'<input name="text" placeholder="写下你的评论…" autocomplete="off" maxlength="300"/>'
+      +'<button class="btn" type="submit">发送</button></form></div>';
+  }
+  return '<div class="post"><div class="top"><div class="avatar">🙂</div>'
+    +'<div><div class="who">我</div><div class="when">'+esc(p.date)+'</div></div></div>'
+    +body+imgHTML+actions+comments+'</div>';
+}
+
+function renderFeed(){
+  if(state.feedOpen){
+    const p=FEED.find(x=>x.id===state.feedOpen);
+    app.innerHTML='<div class="feed"><button class="backlink" data-action="view" data-view="feed">'
+      +'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>返回动态</button>'
+      +postHTML(p,true)+'</div>';
+    return;
+  }
+  app.innerHTML='<div class="feed"><div class="feed-h"><h1>动态</h1><p>日常记录 · 随手的想法与片段</p></div>'
+    +FEED.map(p=>postHTML(p,false)).join("")+'</div>';
+}
+
+/* 知识库 */
+function treeHTML(nodes,depth){
+  return nodes.map(n=>{
+    const pad='style="padding-left:'+(9+depth*15)+'px"';
+    if(n.type==="folder"){
+      const key=n._path.join("/"), open=state.expanded.has(key);
+      return '<div class="node"><div class="row" '+pad+' data-action="kb-toggle" data-key="'+esc(key)+'">'
+        +'<span class="ic">'+(open?'▾':'▸')+'</span><span>'+esc(n.name)+'</span></div>'
+        +(open?'<div>'+treeHTML(n.children||[],depth+1)+'</div>':'')+'</div>';
+    }
+    const sel=state.kbFile===n._id;
+    return '<div class="node"><div class="row '+(sel?'sel':'')+'" '+pad+' data-action="kb-open" data-id="'+n._id+'">'
+      +'<span class="ic">'+(sel?'●':'○')+'</span><span>'+esc(n.name)+'</span></div></div>';
+  }).join("");
+}
+function renderKB(){
+  _hl=0;
+  const f=kbIndex[state.kbFile];
+  const notes=(f&&f.notes)||[];
+  const crumb=f?f._path.slice(0,-1).map(esc).join('<span class="dot">/</span>'):'';
+  const body=f?md(f.body):'';
+  const notesHTML=notes.length
+    ? notes.map((nt,idx)=>'<div class="sticky" id="note-'+(idx+1)+'" data-action="kb-note" data-n="'+(idx+1)+'"><span class="n">'+(idx+1)+'</span>'+esc(nt.text)+'</div>').join("")
+    : '<div class="hint">这篇没有便签。<br>在正文用 <code style="font-size:12px">==文字==</code> 标出重点，再在文件的 notes 里按顺序写便签。</div>';
+  app.innerHTML='<div class="kb">'
+    +'<aside class="panel kb-tree"><div class="ph-title">文件夹</div>'+treeHTML(KB,0)+'</aside>'
+    +'<section class="panel kb-main">'
+    +(f?'<div class="crumb">'+crumb+'</div><h1 class="doc">'+esc(f.name)+'</h1>'
+        +'<div class="doc-meta">'+(f.tags||[]).map(t=>'<span class="t">'+esc(t)+'</span>').join("")+'</div>'
+        +'<div class="md">'+body+'</div>'
+      :'<div class="empty">选择左侧的一篇文档</div>')
+    +'</section>'
+    +'<aside class="panel kb-notes"><div class="ph-title">便签 · Notes</div>'+notesHTML+'</aside></div>';
+}
+
+/* 收藏 */
+function parseSource(url){
+  let m;
+  if(m=url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})/)) return {src:"YouTube",embed:"https://www.youtube.com/embed/"+m[1],thumb:"https://img.youtube.com/vi/"+m[1]+"/hqdefault.jpg",icon:"▶"};
+  if(m=url.match(/bilibili\.com\/video\/(BV[\w]+)/i)) return {src:"Bilibili",embed:"https://player.bilibili.com/player.html?bvid="+m[1]+"&page=1&autoplay=0",thumb:null,icon:"📺"};
+  return {src:"网页",embed:null,thumb:null,icon:"🔗"};
+}
+function favFolders(){
+  const folders=FAV.map(f=>({name:f.name,cover:f.cover,items:f.items.slice()}));
+  store.favAdd.forEach(a=>{ let f=folders.find(x=>x.name===a.folder); if(!f){f={name:a.folder,cover:"⭐",items:[]};folders.push(f);} f.items.push({title:a.title,url:a.url}); });
+  return folders;
+}
+function sideHTML(folders){
+  return '<div class="ph-title">收藏夹</div>'+folders.map((f,i)=>'<div class="folder '+(i===state.favFolder?'sel':'')+'" data-action="fav-folder" data-i="'+i+'">'
+    +'<div class="thumb">'+(/^https?:/.test(f.cover||'')?'<img src="'+esc(f.cover)+'" alt="">':esc(f.cover||'📁'))+'</div>'
+    +'<div style="min-width:0;flex:1"><div class="f-name">'+esc(f.name)+'</div><div class="f-count">'+f.items.length+' 项</div></div></div>').join("");
+}
+function renderFav(){
+  const folders=favFolders();
+  if(state.favFolder>=folders.length) state.favFolder=0;
+  const cur=folders[state.favFolder]||{name:"",items:[]};
+
+  if(state.favItem!=null && cur.items[state.favItem]){
+    const it=cur.items[state.favItem]; const s=parseSource(it.url);
+    app.innerHTML='<div class="fav"><aside class="panel fav-side">'+sideHTML(folders)+'</aside><section>'
+      +'<button class="backlink" data-action="fav-back"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>返回 '+esc(cur.name)+'</button>'
+      +(s.embed?'<div class="embed-wrap"><iframe src="'+esc(s.embed)+'" allowfullscreen allow="autoplay; encrypted-media"></iframe></div>'
+        :'<div class="embed-wrap" style="display:flex;align-items:center;justify-content:center;font-size:52px">'+s.icon+'</div>')
+      +'<h1 style="margin:0 0 6px;font-size:20px">'+esc(it.title)+'</h1>'
+      +'<div style="color:var(--text-dim);font-size:13px;margin-bottom:12px">'+esc(s.src)+'</div>'
+      +'<a class="btn ghost" style="display:inline-block;text-decoration:none" href="'+esc(it.url)+'" target="_blank" rel="noopener">在原网站打开 ↗</a>'
+      +'</section></div>';
+    return;
+  }
+
+  const grid=cur.items.length?'<div class="fav-grid">'+cur.items.map((it,i)=>{
+      const s=parseSource(it.url);
+      return '<div class="fcard" data-action="fav-open" data-i="'+i+'">'
+        +'<div class="cover">'+(s.thumb?'<img src="'+esc(s.thumb)+'" alt="" onerror="this.style.display=\'none\'">':s.icon)
+        +'<span class="src">'+esc(s.src)+'</span>'+(s.embed?'<span class="play">▶</span>':'')+'</div>'
+        +'<div class="info"><div class="t">'+esc(it.title)+'</div><div class="u">'+esc(it.url.replace(/^https?:\/\//,''))+'</div></div></div>';
+    }).join("")+'</div>'
+    :'<div class="empty">这个收藏夹还是空的，点右上角＋添加。</div>';
+  app.innerHTML='<div class="fav"><aside class="panel fav-side">'+sideHTML(folders)+'</aside><section>'
+    +'<div class="fav-main-head"><h1>'+esc(cur.name)+'</h1><span style="color:var(--text-dim);font-size:13px">'+cur.items.length+' 项</span>'
+    +'<div class="spacer"></div><button class="btn" data-action="fav-add-open">＋ 收藏网页/视频</button></div>'
+    +grid+'</section></div>';
+}
+
+function openAddModal(){
+  const folders=favFolders();
+  const bg=document.createElement("div"); bg.className="modal-bg"; bg.id="addModal";
+  bg.innerHTML='<div class="modal"><h3>收藏一个网页 / 视频</h3><p class="sub">粘贴链接即可，YouTube、Bilibili 会自动识别并可内嵌播放。</p>'
+    +'<form id="addForm">'
+    +'<div class="field"><label>链接 URL</label><input name="url" required placeholder="https://…" autocomplete="off"></div>'
+    +'<div class="field"><label>标题</label><input name="title" placeholder="留空则用链接作标题" autocomplete="off"></div>'
+    +'<div class="field"><label>收藏到</label><select name="folder">'+folders.map(f=>'<option>'+esc(f.name)+'</option>').join("")+'<option value="__new__">＋ 新建收藏夹…</option></select></div>'
+    +'<div class="field" id="newFolderWrap" style="display:none"><label>新收藏夹名称</label><input name="newFolder" placeholder="例如：教程" autocomplete="off"></div>'
+    +'<div class="modal-actions"><button type="button" class="btn ghost" data-action="modal-close">取消</button><button type="submit" class="btn">收藏</button></div>'
+    +'</form></div>';
+  document.body.appendChild(bg);
+  const sel=bg.querySelector('[name=folder]'), nfw=bg.querySelector('#newFolderWrap');
+  sel.addEventListener("change",()=>{ nfw.style.display=sel.value==="__new__"?"block":"none"; });
+  bg.addEventListener("click",e=>{ if(e.target===bg) bg.remove(); });
+  bg.querySelector("#addForm").addEventListener("submit",e=>{
+    e.preventDefault(); const fd=new FormData(e.target);
+    let url=(fd.get("url")||"").trim(); if(!url) return;
+    if(!/^https?:/.test(url)) url="https://"+url;
+    let folder=fd.get("folder"); if(folder==="__new__") folder=(fd.get("newFolder")||"新收藏夹").trim()||"新收藏夹";
+    let title=(fd.get("title")||"").trim()|| url.replace(/^https?:\/\//,"").slice(0,60);
+    store.favAdd.push({folder,title,url}); save();
+    const fs=favFolders(); state.favFolder=fs.findIndex(f=>f.name===folder); state.favItem=null;
+    bg.remove(); renderFav();
+  });
+}
+
+document.addEventListener("click",e=>{
+  const el=e.target.closest("[data-action]"); if(!el) return;
+  const a=el.dataset.action;
+  if(a==="theme"){ applyTheme(document.documentElement.getAttribute("data-theme")==="dark"?"light":"dark"); return; }
+  if(a==="view"){ setView(el.dataset.view); return; }
+  if(a==="feed-like"){
+    const id=el.dataset.id; store.likes[id]=!store.likes[id]; save();
+    el.classList.toggle("liked",store.likes[id]);
+    el.querySelector("span").textContent=likeCount(id);
+    if(store.likes[id]){ el.classList.add("pop"); setTimeout(()=>el.classList.remove("pop"),300); }
+    return;
+  }
+  if(a==="feed-open"){ state.feedOpen=el.dataset.id; render(); window.scrollTo(0,0); return; }
+  if(a==="kb-toggle"){ const k=el.dataset.key; state.expanded.has(k)?state.expanded.delete(k):state.expanded.add(k); renderKB(); return; }
+  if(a==="kb-open"){ state.kbFile=el.dataset.id; renderKB(); return; }
+  if(a==="kb-hl"){ flashPair("note-"+el.dataset.n,"hl-"+el.dataset.n); return; }
+  if(a==="kb-note"){ flashPair("hl-"+el.dataset.n,"note-"+el.dataset.n); return; }
+  if(a==="fav-folder"){ state.favFolder=+el.dataset.i; state.favItem=null; renderFav(); return; }
+  if(a==="fav-open"){ state.favItem=+el.dataset.i; renderFav(); window.scrollTo(0,0); return; }
+  if(a==="fav-back"){ state.favItem=null; renderFav(); return; }
+  if(a==="fav-add-open"){ openAddModal(); return; }
+  if(a==="modal-close"){ const m=$("#addModal"); if(m) m.remove(); return; }
+});
+
+document.addEventListener("submit",e=>{
+  const f=e.target.closest('[data-action="feed-comment"]'); if(!f) return;
+  e.preventDefault(); const id=f.dataset.id; const inp=f.querySelector("input");
+  const text=(inp.value||"").trim(); if(!text) return;
+  (store.cmts[id]=store.cmts[id]||[]).push({name:"我",text,when:"刚刚"}); save();
+  renderFeed();
+});
+
+function flashPair(scrollId,otherId){
+  const target=document.getElementById(scrollId), other=document.getElementById(otherId);
+  if(target){ target.scrollIntoView({behavior:"smooth",block:"center"}); target.classList.add("flash"); setTimeout(()=>target.classList.remove("flash"),1200); }
+  if(other){ other.classList.add("flash"); setTimeout(()=>other.classList.remove("flash"),1200); }
+}
+
+function render(){
+  document.querySelectorAll("nav.tabs button").forEach(b=>b.classList.toggle("active",b.dataset.view===state.view));
+  if(state.view==="feed") renderFeed();
+  else if(state.view==="kb") renderKB();
+  else renderFav();
+}
+render();
+</script>
