@@ -358,7 +358,18 @@
     display:flex;flex-direction:column;gap:14px;overflow:visible;z-index:30}
   body.editing .rail{top:120px}
   @media(min-width:1081px){
-    body{padding-right:20vw}
+    body{padding-right:20vw;overflow:hidden}          /* 整页不滚动 */
+    .site-foot{display:none}
+    /* 内容区上到顶栏、下到横分割线，内部滚动 */
+    main{position:fixed;top:62px;left:0;right:20vw;bottom:20vh;
+      max-width:none;margin:0;padding:26px 22px 20px;overflow-y:auto;overflow-x:hidden}
+    main::-webkit-scrollbar{width:0;height:0}
+    main{scrollbar-width:none}
+    .kb-tree,.kb-notes,.fav-side{top:0;max-height:calc(80vh - 108px)}
+    /* 右栏：内容用滚轮上下滑动（不裁剪，照片仍可拖出） */
+    .rail{top:62px;height:calc(80vh - 62px);overflow:visible}
+    .rail-scroll{display:flex;flex-direction:column;gap:14px;
+      transition:transform .12s ease-out;will-change:transform}
     /* 动态：把正文推回整个页面的水平中心（内容区中心比页面中心左偏 10vw） */
     body[data-view="feed"] .feed{transform:translateX(10vw)}
   }
@@ -631,14 +642,14 @@ function renderFeed(){
   if(state.feedOpen){
     const p=DATA.feed.find(x=>x.id===state.feedOpen);
     if(!p){state.feedOpen=null;return renderFeed();}
-    app.innerHTML='<div class="with-rail feed-layout"><div><div class="feed"><button class="backlink" data-action="view" data-view="feed"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>返回动态</button>'+postHTML(p,true)+'</div></div><aside class="rail">'+railPhotosHTML()+'</aside></div>';
+    app.innerHTML='<div class="with-rail feed-layout"><div><div class="feed"><button class="backlink" data-action="view" data-view="feed"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>返回动态</button>'+postHTML(p,true)+'</div></div><aside class="rail"><div class="rail-scroll">'+railPhotosHTML()+'</div></aside></div>';
     applyAllPV();return;
   }
   const composer=state.editMode?'<div class="composer"><textarea id="composerText" placeholder="有什么新鲜事？支持 Markdown…">'+esc(state.composerText||"")+'</textarea>'
     +'<div class="row2"><input id="composerImg" placeholder="图片(emoji 或图片URL，逗号分隔，可留空)"><div class="spacer" style="flex:1"></div><button class="btn" data-action="post-new">发布动态</button></div></div>':'';
   const list=DATA.feed.filter(p=>state.editMode||!p.hidden);
   app.innerHTML='<div class="with-rail feed-layout"><div><div class="feed"><div class="feed-h"><h1>动态</h1><p>DAILY LOG //</p></div>'+composer
-    +(list.length?list.map(p=>postHTML(p,false)).join(""):'<div class="empty">还没有动态'+(state.editMode?'，在上面写第一条吧。':'。')+'</div>')+'</div></div><aside class="rail">'+railPhotosHTML()+'</aside></div>';
+    +(list.length?list.map(p=>postHTML(p,false)).join(""):'<div class="empty">还没有动态'+(state.editMode?'，在上面写第一条吧。':'。')+'</div>')+'</div></div><aside class="rail"><div class="rail-scroll">'+railPhotosHTML()+'</div></aside></div>';
   applyAllPV();
 }
 
@@ -698,7 +709,7 @@ function renderKB(){
   app.innerHTML='<div class="kb"><aside class="panel kb-tree"><div class="ph-title">DIRECTORY</div>'+tools+treeHTML(DATA.kb,0)+'</aside>'
     +'<section class="panel kb-main">'+mid+'</section>'
     +'<aside class="panel kb-notes"><div class="ph-title">NOTES</div>'+notesHTML+'</aside>'
-    +'<aside class="rail">'+railContribHTML()+'</aside></div>';
+    +'<aside class="rail"><div class="rail-scroll">'+railContribHTML()+'</div></aside></div>';
   hydrateContrib();
 }
 
@@ -716,7 +727,7 @@ function renderFav(){
     app.innerHTML='<div class="fav"><aside class="panel fav-side">'+sideHTML()+'</aside><section><button class="backlink" data-action="fav-back"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>返回 '+esc(cur.name)+'</button>'
       +(s.embed?'<div class="embed-wrap"><iframe src="'+esc(s.embed)+'" allowfullscreen allow="autoplay; encrypted-media"></iframe></div>':'<div class="embed-wrap" style="display:flex;align-items:center;justify-content:center;font-size:52px">'+s.icon+'</div>')
       +'<h1 style="margin:0 0 6px;font-size:20px">'+esc(it.title)+'</h1><div style="color:var(--text-dim);font-size:13px;margin-bottom:12px">'+esc(s.src)+'</div>'
-      +'<a class="btn ghost" style="display:inline-block;text-decoration:none" href="'+esc(it.url)+'" target="_blank" rel="noopener">在原网站打开 ↗</a></section><aside class="rail">'+railContactsHTML()+'</aside></div>';
+      +'<a class="btn ghost" style="display:inline-block;text-decoration:none" href="'+esc(it.url)+'" target="_blank" rel="noopener">在原网站打开 ↗</a></section><aside class="rail"><div class="rail-scroll">'+railContactsHTML()+'</div></aside></div>';
     return;
   }
   const items=(cur.items||[]).filter(it=>em||!it.hidden);
@@ -727,11 +738,11 @@ function renderFav(){
     }).join("")+'</div>':'<div class="empty">这个收藏夹还是空的'+(em?'，点右上角＋添加。':'。')+'</div>';
   if(!DATA.fav.length){app.innerHTML='<div class="fav"><aside class="panel fav-side">'+sideHTML()+'</aside><section>'
     +'<div class="fav-main-head"><h1>收藏</h1><div class="spacer" style="flex:1"></div>'+(em?'<button class="btn" data-action="fav-add-open">＋ 收藏网页/视频</button>':'')+'</div>'
-    +'<div class="empty">还没有收藏'+(em?'<br><span style="font-size:13px">点右上角新建收藏夹或直接收藏一个链接。</span>':'。')+'</div></section><aside class="rail">'+railContactsHTML()+'</aside></div>';return;}
+    +'<div class="empty">还没有收藏'+(em?'<br><span style="font-size:13px">点右上角新建收藏夹或直接收藏一个链接。</span>':'。')+'</div></section><aside class="rail"><div class="rail-scroll">'+railContactsHTML()+'</div></aside></div>';return;}
   const head='<div class="fav-main-head"><h1>'+esc(cur.name)+'</h1><span style="color:var(--text-dim);font-size:13px">'+(cur.items||[]).length+' 项</span><div class="spacer" style="flex:1"></div>'
     +(em?'<button class="btn sm soft" data-action="fav-folder-rename" data-i="'+state.favFolder+'">重命名</button><button class="btn sm soft" data-action="fav-folder-hide" data-i="'+state.favFolder+'">'+(cur.hidden?'取消隐藏':'隐藏')+'</button><button class="btn sm danger" data-action="fav-folder-del" data-i="'+state.favFolder+'">删除夹</button>':'')
     +'<button class="btn" data-action="fav-add-open">＋ 收藏网页/视频</button></div>';
-  app.innerHTML='<div class="fav"><aside class="panel fav-side">'+sideHTML()+'</aside><section>'+head+grid+'</section><aside class="rail">'+railContactsHTML()+'</aside></div>';
+  app.innerHTML='<div class="fav"><aside class="panel fav-side">'+sideHTML()+'</aside><section>'+head+grid+'</section><aside class="rail"><div class="rail-scroll">'+railContactsHTML()+'</div></aside></div>';
 }
 
 function captureComposer(){const t=$("#composerText");if(t)state.composerText=t.value;}
@@ -1122,12 +1133,19 @@ async function uploadPendingPhotos(cfg,headers){
     clearTimeout(clickTimer);                          /* 取消单击的缩放 */
     const v=pv(el.dataset.pid);v.x=0;v.y=0;v.s=1;applyPV(el);
   });
+  /* 滚轮在竖分割线右侧：上下滑动右栏内容 */
+  let railY=0;
   document.addEventListener("wheel",e=>{
-    const el=e.target.closest(".photo");if(!el)return;
+    if(innerWidth<1081)return;
+    if(e.clientX < innerWidth*0.8)return;            /* 只在竖线右侧生效 */
+    const rail=document.querySelector(".rail"),inner=document.querySelector(".rail-scroll");
+    if(!rail||!inner)return;
+    const avail=rail.clientHeight||rail.getBoundingClientRect().height;
+    const over=inner.scrollHeight-avail;
+    if(over<=0){railY=0;inner.style.transform="translateY(0px)";return;}
     e.preventDefault();
-    const v=pv(el.dataset.pid);
-    v.s=Math.min(MAXS,Math.max(MINS,+(v.s*(e.deltaY<0?1.12:1/1.12)).toFixed(3)));
-    applyPV(el);
+    railY=Math.min(0,Math.max(-over,railY-e.deltaY));
+    inner.style.transform="translateY("+Math.round(railY)+"px)";
   },{passive:false});
 })();
 
