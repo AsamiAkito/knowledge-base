@@ -1,7 +1,12 @@
 {
   "version": 1,
-  "profile": { "name": "我", "avatar": "🙂" },
+  "profile": { "name": "我", "avatar": "assets/avatar.jpg" },
   "feed": [
+    {
+      "id": "nqssd4t3te",
+      "date": "2026-08-16 11:08",
+      "text": "准备整个个人blog之类的网页，发些没人会看见的碎碎念，存些自己会忘掉的东西，以便INFP人的怀旧时刻发生时，有个能回顾的地方..."
+    },
     {
       "id": "p3",
       "date": "2026-08-11 21:40",
