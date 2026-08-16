@@ -87,7 +87,8 @@
   .post:hover{border-color:var(--text-dim);box-shadow:var(--shadow)}
   .post.hidden-item{opacity:.55;border-style:dashed}
   .post .top{display:flex;align-items:center;gap:11px;margin-bottom:11px}
-  .avatar{width:38px;height:38px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:18px;background:var(--accent-so);color:var(--accent)}
+  .avatar{width:38px;height:38px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:18px;background:var(--accent-so);color:var(--accent);overflow:hidden}
+  .avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%}
   .post .who{font-weight:600;font-size:14.5px}.post .when{font-size:12.5px;color:var(--text-dim)}
   .post .body{font-size:15px;cursor:pointer}.post .body p{margin:0 0 .7em}
   .post .body .clamp{display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden}
@@ -244,6 +245,7 @@
     <div class="spacer"></div>
     <button class="btn sm" data-action="publish">↑ 发布到线上</button>
     <button class="btn sm soft" data-action="export">导出 data.json</button>
+    <button class="btn sm soft" data-action="profile">👤 资料</button>
     <button class="btn sm soft" data-action="ghsettings">⚙ 发布设置</button>
     <button class="btn sm soft" data-action="discard">放弃本地修改</button>
     <button class="btn sm soft" data-action="edit-toggle">完成</button>
@@ -261,6 +263,7 @@
 <script>
 const SEED = {
   version:1,
+  profile:{name:"我",avatar:"🙂"},
   feed:[
     {id:"p3",date:"2026-08-11 21:40",text:"搭好了自己的三合一空间：**动态**发日常、**知识库**存系统笔记、**收藏**收好东西。\n\n整个站点就一个 `index.html`，双击就开。现在还能直接在网页里编辑、发布。"},
     {id:"p2",date:"2026-08-10 12:05",text:"> 你把注意力放在哪里，你就成为什么样的人。\n\n专注不是刻意用力地集中，而是**减少需要做选择的时刻**——把环境和下一步提前准备好，真正开始时就不必再消耗意志力。",images:["🌅","📖","☕"]},
@@ -375,6 +378,7 @@ async function loadData(){
 function setEdit(on){state.editMode=on;document.body.classList.toggle("editing",on);$("#editBtn").classList.toggle("on",on);$("#editBtn").textContent=on?"✓ 编辑中":"✎ 编辑";render();}
 function updateBar(){const s=$("#tbState"),t=$("#tbText");if(!s)return;s.classList.toggle("dirty",dirty);t.textContent=dirty?"有未发布的本地修改":"已同步";}
 
+function avatarHTML(a){a=a||(DATA.profile&&DATA.profile.avatar)||"🙂";return /^https?:/.test(a)?'<img src="'+esc(a)+'" alt="">':esc(a);}
 function feedComments(id){return (store.cmts[id]||[]).slice();}
 function likeCount(id){const base=(id.charCodeAt(1)*7)%40+3;return base+(store.likes[id]?1:0);}
 function postHTML(p,full){
@@ -398,7 +402,8 @@ function postHTML(p,full){
     comments='<div class="comments">'+(clist||'<div style="color:var(--text-dim);font-size:13px;margin-bottom:12px">还没有评论，来说两句 👇</div>')
       +'<form class="cmt-form" data-action="feed-comment" data-id="'+p.id+'"><input name="text" placeholder="写下你的评论…" autocomplete="off" maxlength="300"/><button class="btn" type="submit">发送</button></form></div>';
   }
-  return '<div class="post'+(p.hidden?' hidden-item':'')+'"><div class="top"><div class="avatar">🙂</div><div><div class="who">我</div><div class="when">'+esc(p.date)+'</div></div></div>'
+  const prof=DATA.profile||{name:"我",avatar:"🙂"};
+  return '<div class="post'+(p.hidden?' hidden-item':'')+'"><div class="top"><div class="avatar">'+avatarHTML(prof.avatar)+'</div><div><div class="who">'+esc(prof.name||"我")+'</div><div class="when">'+esc(p.date)+'</div></div></div>'
     +body+imgHTML+'<div class="actions">'+like+cmt+eActions+'</div>'+comments+'</div>';
 }
 function renderFeed(){
@@ -520,7 +525,7 @@ async function publish(){
     else{const e=await put.json().catch(()=>({}));toast("发布失败："+(e.message||put.status));}
   }catch(e){toast("发布出错（检查网络/代理）："+e.message);}
 }
-function exportData(){return {version:1,feed:DATA.feed,kb:DATA.kb,fav:DATA.fav};}
+function exportData(){return {version:1,profile:DATA.profile,feed:DATA.feed,kb:DATA.kb,fav:DATA.fav};}
 function doExport(){const blob=new Blob([JSON.stringify(exportData(),null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="data.json";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);toast("已导出 data.json");}
 
 function modal(html){const bg=document.createElement("div");bg.className="modal-bg";bg.innerHTML='<div class="modal">'+html+'</div>';document.body.appendChild(bg);bg.addEventListener("click",e=>{if(e.target===bg)bg.remove();});return bg;}
@@ -536,6 +541,14 @@ function openSettings(){
     +'<p class="sub" style="margin:0">创建：GitHub → Settings → Developer settings → Fine-grained tokens → 选中本仓库 → Repository permissions → Contents: Read and write。</p>'
     +'<div class="modal-actions"><button type="button" class="btn ghost" data-action="modal-close">取消</button>'+(c.token?'<button type="button" class="btn soft danger" data-action="gh-clear">清除令牌</button>':'')+'<button type="submit" class="btn">保存</button></div></form>');
   bg.querySelector("#ghForm").addEventListener("submit",e=>{e.preventDefault();const fd=new FormData(e.target);const cfg=ghCfg();const nc={owner:fd.get("owner").trim(),repo:fd.get("repo").trim(),branch:fd.get("branch").trim()||"main",path:fd.get("path").trim()||"data.json",token:fd.get("token")||cfg.token};localStorage.setItem(KEY_GH,JSON.stringify(nc));bg.remove();toast("已保存设置");});
+}
+function openProfile(){
+  const p=DATA.profile||{name:"我",avatar:"🙂"};
+  const bg=modal('<h3>个人资料</h3><p class="sub">头像可用一个 emoji，或粘贴一张图片的网址；昵称会显示在每条动态上。改完记得点“发布”。</p><form id="pf">'
+    +'<div class="field"><label>昵称</label><input name="name" value="'+esc(p.name||"")+'"></div>'
+    +'<div class="field"><label>头像（emoji 或 图片URL）</label><input name="avatar" value="'+esc(p.avatar||"")+'" placeholder="🙂 或 https://…"></div>'
+    +'<div class="modal-actions"><button type="button" class="btn ghost" data-action="modal-close">取消</button><button type="submit" class="btn">保存</button></div></form>');
+  bg.querySelector("#pf").addEventListener("submit",e=>{e.preventDefault();const fd=new FormData(e.target);DATA.profile={name:(fd.get("name")||"我").trim()||"我",avatar:(fd.get("avatar")||"🙂").trim()||"🙂"};saveDraft();bg.remove();render();toast("已更新资料");});
 }
 function openAddFav(){
   const bg=modal('<h3>收藏一个网页 / 视频</h3><p class="sub">粘贴链接即可，YouTube、Bilibili 会自动识别并可内嵌播放。</p><form id="addForm">'
@@ -571,6 +584,7 @@ document.addEventListener("click",e=>{
     case "publish":publish();return;
     case "export":doExport();return;
     case "ghsettings":openSettings();return;
+    case "profile":openProfile();return;
     case "discard":if(confirm("放弃所有未发布的本地修改，恢复到线上已发布的内容？")){clearDraft();boot();toast("已放弃本地修改");}return;
     case "modal-close":closeModals();return;
     case "gh-clear":{const c=ghCfg();c.token="";localStorage.setItem(KEY_GH,JSON.stringify(c));closeModals();toast("已清除令牌");return;}
@@ -634,6 +648,7 @@ function render(){
 }
 async function boot(){
   await loadData();ensureIds();
+  if(!DATA.profile)DATA.profile={name:"我",avatar:"🙂"};
   state.expanded=new Set();(function w(nodes){nodes.forEach(n=>{if(n.type==="folder"){state.expanded.add(n.id);w(n.children||[]);}});})(DATA.kb);
   if(!state.kbSel||!locate(state.kbSel))state.kbSel=firstFile();
   if(ownerUnlocked)$("#editBtn").style.display="";

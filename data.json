@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "profile": { "name": "我", "avatar": "🙂" },
   "feed": [
     {
       "id": "p3",
