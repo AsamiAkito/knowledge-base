@@ -345,11 +345,11 @@
 
 <header class="site">
   <div class="site-row">
-    <div class="brand" data-action="view" data-view="feed">我的空间<span class="dot">MY SPACE</span></div>
+    <div class="brand" data-action="view" data-view="feed">秋渡的空间<span class="dot">Akito's SPACE</span></div>
     <nav class="tabs" id="tabs">
       <button data-action="view" data-view="feed">动态</button>
       <button data-action="view" data-view="kb">知识库</button>
-      <button data-action="view" data-view="fav">我的收藏</button>
+      <button data-action="view" data-view="fav">秋渡的收藏</button>
     </nav>
     <div class="spacer"></div>
     <button class="icon-btn" id="editBtn" data-action="edit-toggle" style="display:none">编辑</button>
@@ -519,7 +519,7 @@ function renderFeed(){
   const composer=state.editMode?'<div class="composer"><textarea id="composerText" placeholder="有什么新鲜事？支持 Markdown…">'+esc(state.composerText||"")+'</textarea>'
     +'<div class="row2"><input id="composerImg" placeholder="图片(emoji 或图片URL，逗号分隔，可留空)"><div class="spacer" style="flex:1"></div><button class="btn" data-action="post-new">发布动态</button></div></div>':'';
   const list=DATA.feed.filter(p=>state.editMode||!p.hidden);
-  app.innerHTML='<div class="feed"><div class="feed-h"><h1>动态</h1><p>DAILY LOG // 日常记录</p></div>'+composer
+  app.innerHTML='<div class="feed"><div class="feed-h"><h1>动态</h1><p>DAILY LOG //</p></div>'+composer
     +(list.length?list.map(p=>postHTML(p,false)).join(""):'<div class="empty">还没有动态'+(state.editMode?'，在上面写第一条吧。':'。')+'</div>')+'</div>';
 }
 
