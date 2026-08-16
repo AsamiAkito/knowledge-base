@@ -1,0 +1,12 @@
+# 不要作为网站文件发布的内容（Cloudflare Workers 静态资源忽略表）
+.git
+.git/**
+.wrangler
+.wrangler/**
+.claude
+.claude/**
+.gitignore
+.assetsignore
+wrangler.toml
+wrangler.jsonc
+README.md
