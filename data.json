@@ -13,32 +13,42 @@
   ],
   "kb": [],
   "fav": [],
-  "photos": [],
+  "photos": [
+    {
+      "id": "test-avatar",
+      "src": "assets/avatar.jpg"
+    }
+  ],
   "contacts": [
     {
       "label": "bilibili",
       "value": "",
-      "url": ""
+      "url": "",
+      "icon": ""
     },
     {
       "label": "抖音",
       "value": "",
-      "url": ""
+      "url": "",
+      "icon": ""
     },
     {
       "label": "微信",
       "value": "",
-      "url": ""
+      "url": "",
+      "icon": ""
     },
     {
       "label": "小红书",
       "value": "",
-      "url": ""
+      "url": "",
+      "icon": ""
     },
     {
       "label": "instagram",
       "value": "",
-      "url": ""
+      "url": "",
+      "icon": ""
     }
   ]
 }
