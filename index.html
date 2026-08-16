@@ -248,7 +248,8 @@
     <button class="btn sm soft" data-action="export">导出 data.json</button>
     <button class="btn sm soft" data-action="profile">👤 资料</button>
     <button class="btn sm soft" data-action="ghsettings">⚙ 发布设置</button>
-    <button class="btn sm soft" data-action="discard">放弃本地修改</button>
+    <button class="btn sm soft" id="restoreBtn" data-action="restore" style="display:none">恢复草稿</button>
+    <button class="btn sm soft" data-action="discard">丢弃草稿 / 重载线上</button>
     <button class="btn sm soft" data-action="edit-toggle">完成</button>
   </div>
 </div>
@@ -264,8 +265,9 @@
 <script>
 const SEED = {
   version:1,
-  profile:{name:"我",avatar:"🙂"},
+  profile:{name:"我",avatar:"assets/avatar.jpg"},
   feed:[
+    {id:"nqssd4t3te",date:"2026-08-16 11:08",text:"准备整个个人blog之类的网页，发些没人会看见的碎碎念，存些自己会忘掉的东西，以便INFP人的怀旧时刻发生时，有个能回顾的地方..."},
     {id:"p3",date:"2026-08-11 21:40",text:"搭好了自己的三合一空间：**动态**发日常、**知识库**存系统笔记、**收藏**收好东西。\n\n整个站点就一个 `index.html`，双击就开。现在还能直接在网页里编辑、发布。"},
     {id:"p2",date:"2026-08-10 12:05",text:"> 你把注意力放在哪里，你就成为什么样的人。\n\n专注不是刻意用力地集中，而是**减少需要做选择的时刻**——把环境和下一步提前准备好，真正开始时就不必再消耗意志力。",images:["🌅","📖","☕"]},
     {id:"p1",date:"2026-08-08 09:12",text:"遇到卡住的问题，我常用三个提问把它拆小：\n\n1. 真正要解决的是什么？\n2. 最小可验证的一步是什么？\n3. 最坏会怎样？\n\n大多数不知道从哪开始，本质是问题还太大。",images:["💡"]}
@@ -370,14 +372,15 @@ function collectFolders(banId){const out=[];(function w(nodes,d){nodes.forEach(n
 function targetChildren(){const s=state.kbSel?locate(state.kbSel):null;if(s&&s.node.type==="folder"){state.expanded.add(s.node.id);return s.node.children;}if(s)return s.parent;return DATA.kb;}
 
 async function loadData(){
-  let draft;try{draft=JSON.parse(localStorage.getItem(KEY_DRAFT))}catch(e){}
-  if(draft&&draft.feed){DATA=draft;dirty=true;return;}
-  try{const r=await fetch("data.json",{cache:"no-store"});if(r.ok){const j=await r.json();if(j&&j.feed){DATA=j;dirty=false;return;}}}catch(e){}
+  try{const r=await fetch("data.json?_="+Date.now(),{cache:"no-store"});if(r.ok){const j=await r.json();if(j&&j.feed){DATA=j;dirty=false;return;}}}catch(e){}
   DATA=JSON.parse(JSON.stringify(SEED));dirty=false;
 }
 
 function setEdit(on){state.editMode=on;document.body.classList.toggle("editing",on);$("#editBtn").classList.toggle("on",on);$("#editBtn").textContent=on?"✓ 编辑中":"✎ 编辑";render();}
-function updateBar(){const s=$("#tbState"),t=$("#tbText");if(!s)return;s.classList.toggle("dirty",dirty);t.textContent=dirty?"有未发布的本地修改":"已同步";}
+function hasDraft(){try{const d=JSON.parse(localStorage.getItem(KEY_DRAFT));return !!(d&&d.feed)}catch(e){return false}}
+function updateBar(){const s=$("#tbState"),t=$("#tbText");if(!s)return;s.classList.toggle("dirty",dirty);
+  t.textContent=dirty?"有未发布的修改":(hasDraft()?"显示线上版本（有未发布草稿）":"已同步线上");
+  const rb=$("#restoreBtn");if(rb)rb.style.display=(!dirty&&hasDraft())?"":"none";}
 
 function isImg(a){return /^https?:\/\//.test(a)||/^\.?\/?assets\//.test(a)||/^(data:|blob:)/.test(a)||/\.(jpe?g|png|gif|webp|svg|avif)$/i.test(a);}
 function avatarHTML(a){a=a||(DATA.profile&&DATA.profile.avatar)||"🙂";return isImg(a)?'<img src="'+esc(a)+'" alt="">':esc(a);}
@@ -587,7 +590,8 @@ document.addEventListener("click",e=>{
     case "export":doExport();return;
     case "ghsettings":openSettings();return;
     case "profile":openProfile();return;
-    case "discard":if(confirm("放弃所有未发布的本地修改，恢复到线上已发布的内容？")){clearDraft();boot();toast("已放弃本地修改");}return;
+    case "discard":if(confirm("丢弃本机未发布的草稿，并重新载入线上已发布的内容？")){clearDraft();boot();toast("已重载线上内容");}return;
+    case "restore":{try{const d=JSON.parse(localStorage.getItem(KEY_DRAFT));if(d&&d.feed){DATA=d;ensureIds();if(!DATA.profile)DATA.profile={name:"我",avatar:"🙂"};dirty=true;updateBar();render();toast("已恢复未发布的草稿");}}catch(e){toast("没有可恢复的草稿");}return;}
     case "modal-close":closeModals();return;
     case "gh-clear":{const c=ghCfg();c.token="";localStorage.setItem(KEY_GH,JSON.stringify(c));closeModals();toast("已清除令牌");return;}
 
