@@ -54,7 +54,8 @@
   .hline{position:fixed;left:0;right:0;bottom:20vh;height:1px;z-index:1;pointer-events:none;
     background:color-mix(in srgb,var(--line) 60%,transparent)}
   .hline-mark{position:absolute;top:-1px;left:0;height:3px;width:280px;background:var(--accent);
-    transform:translateX(22px);transition:transform .5s cubic-bezier(.33,1,.68,1);will-change:transform}
+    transform:translateX(22px);will-change:transform;
+    transition:transform .72s cubic-bezier(.25,1.4,.45,1)}   /* 略微冲过头再弹回 */
   @media(max-width:1080px){.hline{display:none}}
 
   /* 通用微标签：大写拉丁 + 宽字距 + 青色短杠 */
@@ -1081,11 +1082,12 @@ async function uploadPendingPhotos(cfg,headers){
 /* 横分割线上的青色段：滑到当前板块正下方 */
 function moveHLine(){
   const mark=$("#hlineMark");if(!mark)return;
-  const btn=document.querySelector('nav.tabs button[data-view="'+state.view+'"]');if(!btn)return;
-  const r=btn.getBoundingClientRect();
+  const views=["feed","kb","fav"];
+  const i=Math.max(0,views.indexOf(state.view));
   const w=mark.offsetWidth||280;
-  let x=r.left+r.width/2-w/2;                     /* 与该板块居中对齐 */
-  x=Math.max(22,Math.min(x,innerWidth-w-22));     /* 不超出屏幕两端 */
+  const pad=Math.max(22,innerWidth*0.08);
+  const a=pad,b=Math.max(a,innerWidth-w-pad);     /* 左端 / 右端 */
+  const x=a+(b-a)*(i/(views.length-1));           /* 动态在左，知识库居中，收藏在右 */
   mark.style.transform="translateX("+Math.round(x)+"px)";
 }
 addEventListener("resize",moveHLine);
