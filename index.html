@@ -176,8 +176,6 @@
   .folder{display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:10px;cursor:pointer;transition:background .15s}
   .folder:hover{background:var(--bg-soft)}.folder.sel{background:var(--accent-so)}
   .folder.hidden-item{opacity:.5}
-  .folder .thumb{width:44px;height:34px;border-radius:7px;flex:none;overflow:hidden;background:linear-gradient(135deg,var(--accent-so),var(--bg-soft));display:flex;align-items:center;justify-content:center;font-size:17px}
-  .folder .thumb img{width:100%;height:100%;object-fit:cover}
   .folder .f-name{font-size:14px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .folder.sel .f-name{color:var(--accent)}.folder .f-count{font-size:12px;color:var(--text-dim)}
   .fav-main-head{display:flex;align-items:center;gap:8px;margin-bottom:18px;flex-wrap:wrap}.fav-main-head h1{margin:0;font-size:22px}
@@ -235,8 +233,8 @@
       <button data-action="view" data-view="fav">我的收藏</button>
     </nav>
     <div class="spacer"></div>
-    <button class="icon-btn" id="editBtn" data-action="edit-toggle" style="display:none">✎ 编辑</button>
-    <button class="icon-btn sq" id="themeBtn" title="切换主题" data-action="theme">🌙</button>
+    <button class="icon-btn" id="editBtn" data-action="edit-toggle" style="display:none">编辑</button>
+    <button class="icon-btn sq" id="themeBtn" title="切换主题" data-action="theme">暗</button>
   </div>
 </header>
 
@@ -244,10 +242,10 @@
   <div class="toolbar-row">
     <span class="tb-state" id="tbState"><span class="dot"></span><span id="tbText">已同步</span></span>
     <div class="spacer"></div>
-    <button class="btn sm" data-action="publish">↑ 发布到线上</button>
+    <button class="btn sm" data-action="publish">发布到线上</button>
     <button class="btn sm soft" data-action="export">导出 data.json</button>
-    <button class="btn sm soft" data-action="profile">👤 资料</button>
-    <button class="btn sm soft" data-action="ghsettings">⚙ 发布设置</button>
+    <button class="btn sm soft" data-action="profile">资料</button>
+    <button class="btn sm soft" data-action="ghsettings">发布设置</button>
     <button class="btn sm soft" id="restoreBtn" data-action="restore" style="display:none">恢复草稿</button>
     <button class="btn sm soft" data-action="discard">丢弃草稿 / 重载线上</button>
     <button class="btn sm soft" data-action="edit-toggle">完成</button>
@@ -267,31 +265,10 @@ const SEED = {
   version:1,
   profile:{name:"我",avatar:"assets/avatar.jpg"},
   feed:[
-    {id:"nqssd4t3te",date:"2026-08-16 11:08",text:"准备整个个人blog之类的网页，发些没人会看见的碎碎念，存些自己会忘掉的东西，以便INFP人的怀旧时刻发生时，有个能回顾的地方..."},
-    {id:"p3",date:"2026-08-11 21:40",text:"搭好了自己的三合一空间：**动态**发日常、**知识库**存系统笔记、**收藏**收好东西。\n\n整个站点就一个 `index.html`，双击就开。现在还能直接在网页里编辑、发布。"},
-    {id:"p2",date:"2026-08-10 12:05",text:"> 你把注意力放在哪里，你就成为什么样的人。\n\n专注不是刻意用力地集中，而是**减少需要做选择的时刻**——把环境和下一步提前准备好，真正开始时就不必再消耗意志力。",images:["🌅","📖","☕"]},
-    {id:"p1",date:"2026-08-08 09:12",text:"遇到卡住的问题，我常用三个提问把它拆小：\n\n1. 真正要解决的是什么？\n2. 最小可验证的一步是什么？\n3. 最坏会怎样？\n\n大多数不知道从哪开始，本质是问题还太大。",images:["💡"]}
+    {id:"nqssd4t3te",date:"2026-08-16 11:08",text:"准备整个个人blog之类的网页，发些没人会看见的碎碎念，存些自己会忘掉的东西，以便INFP人的怀旧时刻发生时，有个能回顾的地方..."}
   ],
-  kb:[
-    {id:"k1",type:"folder",name:"技术笔记",children:[
-      {id:"k2",type:"folder",name:"前端",children:[
-        {id:"k3",type:"file",name:"CSS Grid 布局",tags:["CSS","布局"],notes:[{text:"fr 是剩余空间的一份，比百分比好用，会自动扣掉 gap。"},{text:"auto-fill 与 auto-fit：列不够时前者留空轨道，后者拉伸填满。"}],body:"Grid 是二维布局系统，同时控制行与列。\n\n## 定义网格\n容器上写 `display:grid`，再用 `grid-template-columns` 定义列：\n\n```css\n.grid{\n  display:grid;\n  grid-template-columns:repeat(3,1fr);\n  gap:16px;\n}\n```\n\n==`1fr` 表示剩余空间的一份==，三列就是三等分，而且 `gap` 会被自动扣除。\n\n## 响应式一行搞定\n\n```css\ngrid-template-columns:repeat(auto-fill,minmax(220px,1fr));\n```\n\n==`auto-fill` 会保留空轨道，`auto-fit` 会压缩空轨道、让已有列拉伸填满==。"},
-        {id:"k4",type:"file",name:"防抖与节流",tags:["JavaScript"],notes:[{text:"记忆法：防抖=等你说完再回答；节流=每隔几秒才回答一次。"}],body:"两个都是控制高频事件触发频率的技巧。\n\n- ==防抖(debounce)：事件停止 N 毫秒后才执行==，适合搜索输入。\n- 节流(throttle)：每 N 毫秒最多执行一次，适合滚动、resize。\n\n```js\nfunction debounce(fn, wait){\n  let t;\n  return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), wait); };\n}\n```"}
-      ]},
-      {id:"k5",type:"folder",name:"工具",children:[
-        {id:"k6",type:"file",name:"Git 常用命令",tags:["Git"],body:"```bash\ngit switch -c feature   # 新建并切换分支\ngit restore file        # 撤销工作区改动\ngit commit --amend      # 修改上一次提交\n```\n\n> 提交信息写清为什么改，比写改了什么更值钱。"}
-      ]}
-    ]},
-    {id:"k7",type:"folder",name:"读书",children:[
-      {id:"k8",type:"file",name:"关于专注 · 摘录",tags:["阅读","思考"],notes:[{text:"这句可以贴在显示器上。"}],body:"==你把注意力放在哪里，你就成为什么样的人。==\n\n减少选择的时刻，比强行集中更有效。清单、环境、下一步——都提前准备好。"}
-    ]},
-    {id:"k9",type:"file",name:"README · 怎么用",tags:["说明"],body:"点右上角 **✎ 编辑** 进入编辑模式，就能：发动态、改知识库结构、导入文件、重命名、隐藏、下载。\n\n改完点 **发布** 更新线上网站（需在设置里填一次 GitHub 令牌），或 **导出** data.json 手动备份。"}
-  ],
-  fav:[
-    {name:"稍后再看",cover:"🎬",items:[{title:"Grid 布局完整教程",url:"https://www.youtube.com/watch?v=rg7Fvvl3taU"},{title:"【纪录片】神奇的材料科学",url:"https://www.bilibili.com/video/BV1GJ411x7h7"}]},
-    {name:"设计灵感",cover:"🎨",items:[{title:"Excalidraw — 手绘风白板",url:"https://excalidraw.com/"},{title:"MDN Web Docs",url:"https://developer.mozilla.org/"}]},
-    {name:"想读的文章",cover:"📚",items:[{title:"深入理解 Flexbox",url:"https://css-tricks.com/snippets/css/a-guide-to-flexbox/"}]}
-  ]
+  kb:[],
+  fav:[]
 };
 </script>
 
@@ -317,7 +294,7 @@ function saveDraft(){dirty=true;try{localStorage.setItem(KEY_DRAFT,JSON.stringif
 function clearDraft(){dirty=false;try{localStorage.removeItem(KEY_DRAFT)}catch(e){}updateBar();}
 function ghCfg(){let c;try{c=JSON.parse(localStorage.getItem(KEY_GH))}catch(e){}return Object.assign({owner:"AsamiAkito",repo:"knowledge-base",branch:"main",path:"data.json",token:""},c||{});}
 
-function applyTheme(t){document.documentElement.setAttribute("data-theme",t);$("#themeBtn").textContent=t==="dark"?"☀️":"🌙";try{localStorage.setItem(KEY_THEME,t)}catch(e){}}
+function applyTheme(t){document.documentElement.setAttribute("data-theme",t);$("#themeBtn").textContent=t==="dark"?"亮":"暗";try{localStorage.setItem(KEY_THEME,t)}catch(e){}}
 (function(){let t;try{t=localStorage.getItem(KEY_THEME)}catch(e){}if(!t)t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";applyTheme(t);})();
 
 let ownerUnlocked=false;
@@ -376,16 +353,18 @@ async function loadData(){
   DATA=JSON.parse(JSON.stringify(SEED));dirty=false;
 }
 
-function setEdit(on){state.editMode=on;document.body.classList.toggle("editing",on);$("#editBtn").classList.toggle("on",on);$("#editBtn").textContent=on?"✓ 编辑中":"✎ 编辑";render();}
+function setEdit(on){state.editMode=on;document.body.classList.toggle("editing",on);$("#editBtn").classList.toggle("on",on);$("#editBtn").textContent=on?"编辑中":"编辑";render();}
 function hasDraft(){try{const d=JSON.parse(localStorage.getItem(KEY_DRAFT));return !!(d&&d.feed)}catch(e){return false}}
 function updateBar(){const s=$("#tbState"),t=$("#tbText");if(!s)return;s.classList.toggle("dirty",dirty);
   t.textContent=dirty?"有未发布的修改":(hasDraft()?"显示线上版本（有未发布草稿）":"已同步线上");
   const rb=$("#restoreBtn");if(rb)rb.style.display=(!dirty&&hasDraft())?"":"none";}
 
 function isImg(a){return /^https?:\/\//.test(a)||/^\.?\/?assets\//.test(a)||/^(data:|blob:)/.test(a)||/\.(jpe?g|png|gif|webp|svg|avif)$/i.test(a);}
-function avatarHTML(a){a=a||(DATA.profile&&DATA.profile.avatar)||"🙂";return isImg(a)?'<img src="'+esc(a)+'" alt="">':esc(a);}
+function avatarHTML(a){const prof=DATA.profile||{};a=(a===undefined?prof.avatar:a)||"";
+  if(isImg(a))return '<img src="'+esc(a)+'" alt="">';
+  return esc(a||((prof.name||"我").trim()[0]));}
 function feedComments(id){return (store.cmts[id]||[]).slice();}
-function likeCount(id){const base=(id.charCodeAt(1)*7)%40+3;return base+(store.likes[id]?1:0);}
+function likeCount(id){return store.likes[id]?1:0;}
 function postHTML(p,full){
   const liked=store.likes[p.id];const cs=feedComments(p.id);const imgs=(p.images||[]);const em=state.editMode;
   if(state.editingPost===p.id){
@@ -395,7 +374,7 @@ function postHTML(p,full){
   }
   const imgHTML=imgs.length?'<div class="imgs '+(imgs.length===1?'one':imgs.length===2?'two':'')+'">'+imgs.map(x=>'<div class="ph">'+(/^https?:/.test(x)?'<img src="'+esc(x)+'" alt="">':esc(x))+'</div>').join("")+'</div>':"";
   const body='<div class="body '+(full?'':'clamp')+'" data-action="feed-open" data-id="'+p.id+'">'+md(p.text)+'</div>';
-  const like='<button class="act '+(liked?'liked':'')+'" data-action="feed-like" data-id="'+p.id+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg><span>'+likeCount(p.id)+'</span></button>';
+  const like='<button class="act '+(liked?'liked':'')+'" data-action="feed-like" data-id="'+p.id+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg><span>'+(likeCount(p.id)||'赞')+'</span></button>';
   const cmt='<button class="act" data-action="feed-open" data-id="'+p.id+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>'+(cs.length||'评论')+'</span></button>';
   const eActions=em?'<div class="edit-actions">'+(p.hidden?'<span class="hbadge">已隐藏</span>':'')
       +'<button class="mini" data-action="post-edit" data-id="'+p.id+'">编辑</button>'
@@ -404,10 +383,10 @@ function postHTML(p,full){
   let comments="";
   if(full){
     const clist=cs.map(c=>'<div class="cmt"><div class="avatar">'+esc((c.name||'我')[0])+'</div><div class="c-main"><div class="c-name">'+esc(c.name||'我')+'<span>'+esc(c.when||'')+'</span></div><div class="c-text">'+esc(c.text)+'</div></div></div>').join("");
-    comments='<div class="comments">'+(clist||'<div style="color:var(--text-dim);font-size:13px;margin-bottom:12px">还没有评论，来说两句 👇</div>')
+    comments='<div class="comments">'+(clist||'<div style="color:var(--text-dim);font-size:13px;margin-bottom:12px">还没有评论</div>')
       +'<form class="cmt-form" data-action="feed-comment" data-id="'+p.id+'"><input name="text" placeholder="写下你的评论…" autocomplete="off" maxlength="300"/><button class="btn" type="submit">发送</button></form></div>';
   }
-  const prof=DATA.profile||{name:"我",avatar:"🙂"};
+  const prof=DATA.profile||{name:"我",avatar:""};
   return '<div class="post'+(p.hidden?' hidden-item':'')+'"><div class="top"><div class="avatar">'+avatarHTML(prof.avatar)+'</div><div><div class="who">'+esc(prof.name||"我")+'</div><div class="when">'+esc(p.date)+'</div></div></div>'
     +body+imgHTML+'<div class="actions">'+like+cmt+eActions+'</div>'+comments+'</div>';
 }
@@ -427,7 +406,7 @@ function renderFeed(){
 
 function treeHTML(nodes,depth){
   return nodes.filter(n=>state.editMode||!n.hidden).map(n=>{
-    const pad='style="padding-left:'+(9+depth*15)+'px"';const hid=n.hidden?' hidden-item':'';const eye=n.hidden?'<span class="eye">🚫</span>':'';
+    const pad='style="padding-left:'+(9+depth*15)+'px"';const hid=n.hidden?' hidden-item':'';const eye=n.hidden?'<span class="eye">隐藏</span>':'';
     if(n.type==="folder"){
       const open=state.expanded.has(n.id);const sel=state.kbSel===n.id;
       return '<div class="node"><div class="row'+(sel?' sel':'')+hid+'" '+pad+' data-action="kb-folder" data-id="'+n.id+'"><span class="ic">'+(open?'▾':'▸')+'</span><span>'+esc(n.name)+'</span>'+eye+'</div>'+(open?'<div>'+treeHTML(n.children||[],depth+1)+'</div>':'')+'</div>';
@@ -452,13 +431,13 @@ function renderKB(){
   if(!state.kbSel||!locate(state.kbSel))state.kbSel=firstFile();
   const loc=state.kbSel?locate(state.kbSel):null;
   const node=loc?loc.node:null;const em=state.editMode;
-  const tools=em?'<div class="tree-tools"><button data-action="kb-newfolder">＋文件夹</button><button data-action="kb-newfile">＋文件</button><button data-action="kb-import">⬆导入</button></div>':'';
+  const tools=em?'<div class="tree-tools"><button data-action="kb-newfolder">＋文件夹</button><button data-action="kb-newfile">＋文件</button><button data-action="kb-import">导入</button></div>':'';
   let mid;
-  if(!node){mid='<div class="empty">选择左侧的一篇文档'+(em?'，或新建一个。':'。')+'</div>';}
+  if(!node){mid='<div class="empty">'+(DATA.kb.length?'选择左侧的一篇文档':'知识库还是空的')+(em?'<br><span style="font-size:13px">用左侧的“＋文件夹 / ＋文件 / 导入”开始建立。</span>':'')+'</div>';}
   else if(state.editingFile&&node.type==="file"){mid=fileEditorHTML(node);}
   else if(node.type==="file"){
     const crumb=loc.trail.map(t=>esc(t.name)).join('<span class="dot">/</span>');
-    const dtools=em?'<div class="doc-tools"><button class="btn sm" data-action="kb-edit" data-id="'+node.id+'">✎ 编辑文档</button>'
+    const dtools=em?'<div class="doc-tools"><button class="btn sm" data-action="kb-edit" data-id="'+node.id+'">编辑文档</button>'
       +'<button class="btn sm soft" data-action="kb-rename" data-id="'+node.id+'">重命名</button>'
       +'<button class="btn sm soft" data-action="kb-move" data-id="'+node.id+'">移动</button>'
       +'<button class="btn sm soft" data-action="kb-hide" data-id="'+node.id+'">'+(node.hidden?'取消隐藏':'隐藏')+'</button>'
@@ -473,8 +452,8 @@ function renderKB(){
       +'<button class="btn sm soft" data-action="kb-move" data-id="'+node.id+'">移动</button>'
       +'<button class="btn sm soft" data-action="kb-hide" data-id="'+node.id+'">'+(node.hidden?'取消隐藏':'隐藏')+'</button>'
       +'<button class="btn sm danger" data-action="kb-delete" data-id="'+node.id+'">删除</button></div>':'';
-    mid='<div class="crumb">'+(crumb||'知识库')+'</div><h1 class="doc">📁 '+esc(node.name)+'</h1><div class="doc-meta">'+kids.length+' 项</div>'+dtools
-      +'<ul class="folder-list">'+(kids.length?kids.map(c=>'<li data-action="'+(c.type==="folder"?"kb-folder":"kb-open")+'" data-id="'+c.id+'"><span class="ic">'+(c.type==="folder"?'📁':'📄')+'</span><span>'+esc(c.name)+'</span>'+(c.hidden?' <span class="hbadge">隐藏</span>':'')+'</li>').join(""):'<li style="cursor:default;color:var(--text-dim)">空文件夹</li>')+'</ul>';
+    mid='<div class="crumb">'+(crumb||'知识库')+'</div><h1 class="doc">'+esc(node.name)+'</h1><div class="doc-meta">'+kids.length+' 项</div>'+dtools
+      +'<ul class="folder-list">'+(kids.length?kids.map(c=>'<li data-action="'+(c.type==="folder"?"kb-folder":"kb-open")+'" data-id="'+c.id+'"><span class="ic">'+(c.type==="folder"?'文件夹':'文档')+'</span><span>'+esc(c.name)+'</span>'+(c.hidden?' <span class="hbadge">隐藏</span>':'')+'</li>').join(""):'<li style="cursor:default;color:var(--text-dim)">空文件夹</li>')+'</ul>';
   }
   const notes=(node&&node.type==="file"&&node.notes)||[];
   const notesHTML=notes.length?notes.map((nt,idx)=>'<div class="sticky" id="note-'+(idx+1)+'" data-action="kb-note" data-n="'+(idx+1)+'"><span class="n">'+(idx+1)+'</span>'+esc(nt.text)+'</div>').join(""):'<div class="hint">这篇没有便签。'+(em?'<br>编辑文档时在下方“便签”里添加，会对应正文的 ==高亮==。':'')+'</div>';
@@ -484,10 +463,10 @@ function renderKB(){
 }
 
 function parseSource(url){let m;
-  if(m=url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})/))return{src:"YouTube",embed:"https://www.youtube.com/embed/"+m[1],thumb:"https://img.youtube.com/vi/"+m[1]+"/hqdefault.jpg",icon:"▶"};
-  if(m=url.match(/bilibili\.com\/video\/(BV[\w]+)/i))return{src:"Bilibili",embed:"https://player.bilibili.com/player.html?bvid="+m[1]+"&page=1&autoplay=0",thumb:null,icon:"📺"};
-  return{src:"网页",embed:null,thumb:null,icon:"🔗"};}
-function sideHTML(){return '<div class="ph-title">收藏夹</div>'+DATA.fav.filter(f=>state.editMode||!f.hidden).map(f=>{const i=DATA.fav.indexOf(f);return '<div class="folder'+(i===state.favFolder?' sel':'')+(f.hidden?' hidden-item':'')+'" data-action="fav-folder" data-i="'+i+'"><div class="thumb">'+(/^https?:/.test(f.cover||'')?'<img src="'+esc(f.cover)+'" alt="">':esc(f.cover||'📁'))+'</div><div style="min-width:0;flex:1"><div class="f-name">'+esc(f.name)+'</div><div class="f-count">'+(f.items||[]).length+' 项</div></div></div>';}).join("")
+  if(m=url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})/))return{src:"YouTube",embed:"https://www.youtube.com/embed/"+m[1],thumb:"https://img.youtube.com/vi/"+m[1]+"/hqdefault.jpg",icon:""};
+  if(m=url.match(/bilibili\.com\/video\/(BV[\w]+)/i))return{src:"Bilibili",embed:"https://player.bilibili.com/player.html?bvid="+m[1]+"&page=1&autoplay=0",thumb:null,icon:""};
+  return{src:"网页",embed:null,thumb:null,icon:""};}
+function sideHTML(){return '<div class="ph-title">收藏夹</div>'+DATA.fav.filter(f=>state.editMode||!f.hidden).map(f=>{const i=DATA.fav.indexOf(f);return '<div class="folder'+(i===state.favFolder?' sel':'')+(f.hidden?' hidden-item':'')+'" data-action="fav-folder" data-i="'+i+'"><div style="min-width:0;flex:1"><div class="f-name">'+esc(f.name)+'</div><div class="f-count">'+(f.items||[]).length+' 项</div></div></div>';}).join("")
   +(state.editMode?'<button class="btn sm soft" style="width:100%;margin-top:10px" data-action="fav-newfolder">＋ 新建收藏夹</button>':'');}
 function renderFav(){
   if(state.favFolder>=DATA.fav.length)state.favFolder=0;
@@ -502,10 +481,13 @@ function renderFav(){
   }
   const items=(cur.items||[]).filter(it=>em||!it.hidden);
   const grid=items.length?'<div class="fav-grid">'+cur.items.map((it,i)=>{if(!em&&it.hidden)return"";const s=parseSource(it.url);
-      return '<div class="fcard'+(it.hidden?' hidden-item':'')+'"><div class="cover" data-action="fav-open" data-i="'+i+'">'+(s.thumb?'<img src="'+esc(s.thumb)+'" alt="" onerror="this.style.display=\'none\'">':s.icon)+'<span class="src">'+esc(s.src)+'</span>'+(s.embed?'<span class="play">▶</span>':'')+'</div>'
+      return '<div class="fcard'+(it.hidden?' hidden-item':'')+'"><div class="cover" data-action="fav-open" data-i="'+i+'">'+(s.thumb?'<img src="'+esc(s.thumb)+'" alt="" onerror="this.style.display=\'none\'">':s.icon)+'<span class="src">'+esc(s.src)+'</span>'+'</div>'
         +'<div class="info" data-action="fav-open" data-i="'+i+'" style="cursor:pointer"><div class="t">'+esc(it.title)+'</div><div class="u">'+esc(it.url.replace(/^https?:\/\//,''))+'</div></div>'
         +(em?'<div class="fedit"><button class="mini" data-action="fav-item-hide" data-i="'+i+'">'+(it.hidden?'取消隐藏':'隐藏')+'</button><button class="mini danger" data-action="fav-item-del" data-i="'+i+'">删除</button></div>':'')+'</div>';
     }).join("")+'</div>':'<div class="empty">这个收藏夹还是空的'+(em?'，点右上角＋添加。':'。')+'</div>';
+  if(!DATA.fav.length){app.innerHTML='<div class="fav"><aside class="panel fav-side">'+sideHTML()+'</aside><section>'
+    +'<div class="fav-main-head"><h1>收藏</h1><div class="spacer" style="flex:1"></div>'+(em?'<button class="btn" data-action="fav-add-open">＋ 收藏网页/视频</button>':'')+'</div>'
+    +'<div class="empty">还没有收藏'+(em?'<br><span style="font-size:13px">点右上角新建收藏夹或直接收藏一个链接。</span>':'。')+'</div></section></div>';return;}
   const head='<div class="fav-main-head"><h1>'+esc(cur.name)+'</h1><span style="color:var(--text-dim);font-size:13px">'+(cur.items||[]).length+' 项</span><div class="spacer" style="flex:1"></div>'
     +(em?'<button class="btn sm soft" data-action="fav-folder-rename" data-i="'+state.favFolder+'">重命名</button><button class="btn sm soft" data-action="fav-folder-hide" data-i="'+state.favFolder+'">'+(cur.hidden?'取消隐藏':'隐藏')+'</button><button class="btn sm danger" data-action="fav-folder-del" data-i="'+state.favFolder+'">删除夹</button>':'')
     +'<button class="btn" data-action="fav-add-open">＋ 收藏网页/视频</button></div>';
@@ -517,7 +499,7 @@ function captureFileBuf(){if(!state.fileBuf)return;const nm=$("#fe-name"),tg=$("
 
 function toB64(str){const bytes=new TextEncoder().encode(str);let bin="";const ch=0x8000;for(let i=0;i<bytes.length;i+=ch)bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+ch));return btoa(bin);}
 async function publish(){
-  const cfg=ghCfg();if(!cfg.token){toast("请先在 ⚙ 发布设置 里填 GitHub 令牌");openSettings();return;}
+  const cfg=ghCfg();if(!cfg.token){toast("请先在发布设置里填 GitHub 令牌");openSettings();return;}
   const base="https://api.github.com/repos/"+cfg.owner+"/"+cfg.repo+"/contents/"+cfg.path;
   const headers={Authorization:"Bearer "+cfg.token,Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"};
   toast("正在发布…");
@@ -526,7 +508,7 @@ async function publish(){
     try{const r=await fetch(base+"?ref="+encodeURIComponent(cfg.branch),{headers,cache:"no-store"});if(r.ok)sha=(await r.json()).sha;}catch(e){}
     const body={message:"更新内容（网页编辑器）",content:toB64(JSON.stringify(exportData(),null,2)),branch:cfg.branch};if(sha)body.sha=sha;
     const put=await fetch(base,{method:"PUT",headers:Object.assign({"Content-Type":"application/json"},headers),body:JSON.stringify(body)});
-    if(put.ok){clearDraft();toast("✓ 已发布！网站约 1 分钟后更新");}
+    if(put.ok){clearDraft();toast("已发布，网站约 1 分钟后更新");}
     else{const e=await put.json().catch(()=>({}));toast("发布失败："+(e.message||put.status));}
   }catch(e){toast("发布出错（检查网络/代理）："+e.message);}
 }
@@ -548,12 +530,12 @@ function openSettings(){
   bg.querySelector("#ghForm").addEventListener("submit",e=>{e.preventDefault();const fd=new FormData(e.target);const cfg=ghCfg();const nc={owner:fd.get("owner").trim(),repo:fd.get("repo").trim(),branch:fd.get("branch").trim()||"main",path:fd.get("path").trim()||"data.json",token:fd.get("token")||cfg.token};localStorage.setItem(KEY_GH,JSON.stringify(nc));bg.remove();toast("已保存设置");});
 }
 function openProfile(){
-  const p=DATA.profile||{name:"我",avatar:"🙂"};
+  const p=DATA.profile||{name:"我",avatar:""};
   const bg=modal('<h3>个人资料</h3><p class="sub">头像可用一个 emoji，或粘贴一张图片的网址；昵称会显示在每条动态上。改完记得点“发布”。</p><form id="pf">'
     +'<div class="field"><label>昵称</label><input name="name" value="'+esc(p.name||"")+'"></div>'
-    +'<div class="field"><label>头像（emoji 或 图片URL）</label><input name="avatar" value="'+esc(p.avatar||"")+'" placeholder="🙂 或 https://…"></div>'
+    +'<div class="field"><label>头像（图片路径或网址）</label><input name="avatar" value="'+esc(p.avatar||"")+'" placeholder="assets/avatar.jpg 或 https://…"></div>'
     +'<div class="modal-actions"><button type="button" class="btn ghost" data-action="modal-close">取消</button><button type="submit" class="btn">保存</button></div></form>');
-  bg.querySelector("#pf").addEventListener("submit",e=>{e.preventDefault();const fd=new FormData(e.target);DATA.profile={name:(fd.get("name")||"我").trim()||"我",avatar:(fd.get("avatar")||"🙂").trim()||"🙂"};saveDraft();bg.remove();render();toast("已更新资料");});
+  bg.querySelector("#pf").addEventListener("submit",e=>{e.preventDefault();const fd=new FormData(e.target);DATA.profile={name:(fd.get("name")||"我").trim()||"我",avatar:(fd.get("avatar")||"").trim()};saveDraft();bg.remove();render();toast("已更新资料");});
 }
 function openAddFav(){
   const bg=modal('<h3>收藏一个网页 / 视频</h3><p class="sub">粘贴链接即可，YouTube、Bilibili 会自动识别并可内嵌播放。</p><form id="addForm">'
@@ -566,13 +548,13 @@ function openAddFav(){
   sel.addEventListener("change",()=>nfw.style.display=sel.value==="__new__"?"block":"none");
   bg.querySelector("#addForm").addEventListener("submit",e=>{e.preventDefault();const fd=new FormData(e.target);let url=(fd.get("url")||"").trim();if(!url)return;if(!/^https?:/.test(url))url="https://"+url;
     let title=(fd.get("title")||"").trim()||url.replace(/^https?:\/\//,"").slice(0,60);let fi;
-    if(sel.value==="__new__"){const nm=(fd.get("newFolder")||"新收藏夹").trim()||"新收藏夹";DATA.fav.push({name:nm,cover:"⭐",items:[]});fi=DATA.fav.length-1;}else fi=+sel.value;
+    if(sel.value==="__new__"){const nm=(fd.get("newFolder")||"新收藏夹").trim()||"新收藏夹";DATA.fav.push({name:nm,items:[]});fi=DATA.fav.length-1;}else fi=+sel.value;
     (DATA.fav[fi].items=DATA.fav[fi].items||[]).push({title,url});state.favFolder=fi;state.favItem=null;saveDraft();bg.remove();renderFav();toast("已收藏");});
 }
 function openMove(id){
   const loc=locate(id);if(!loc)return;
   const folders=collectFolders(id);
-  const opts='<button data-action="move-pick" data-target="root">（根目录）</button>'+folders.map(f=>'<button data-action="move-pick" data-target="'+f.id+'">'+'&nbsp;'.repeat(f.depth*2)+'📁 '+esc(f.name)+'</button>').join("");
+  const opts='<button data-action="move-pick" data-target="root">（根目录）</button>'+folders.map(f=>'<button data-action="move-pick" data-target="'+f.id+'">'+'&nbsp;'.repeat(f.depth*2)+esc(f.name)+'</button>').join("");
   state.moving=id;
   modal('<h3>移动到…</h3><p class="sub">把「'+esc(loc.node.name)+'」移动到哪个文件夹？</p><div class="picklist">'+opts+'</div><div class="modal-actions"><button class="btn ghost" data-action="modal-close">取消</button></div>');
 }
@@ -591,11 +573,11 @@ document.addEventListener("click",e=>{
     case "ghsettings":openSettings();return;
     case "profile":openProfile();return;
     case "discard":if(confirm("丢弃本机未发布的草稿，并重新载入线上已发布的内容？")){clearDraft();boot();toast("已重载线上内容");}return;
-    case "restore":{try{const d=JSON.parse(localStorage.getItem(KEY_DRAFT));if(d&&d.feed){DATA=d;ensureIds();if(!DATA.profile)DATA.profile={name:"我",avatar:"🙂"};dirty=true;updateBar();render();toast("已恢复未发布的草稿");}}catch(e){toast("没有可恢复的草稿");}return;}
+    case "restore":{try{const d=JSON.parse(localStorage.getItem(KEY_DRAFT));if(d&&d.feed){DATA=d;ensureIds();if(!DATA.profile)DATA.profile={name:"我",avatar:""};dirty=true;updateBar();render();toast("已恢复未发布的草稿");}}catch(e){toast("没有可恢复的草稿");}return;}
     case "modal-close":closeModals();return;
     case "gh-clear":{const c=ghCfg();c.token="";localStorage.setItem(KEY_GH,JSON.stringify(c));closeModals();toast("已清除令牌");return;}
 
-    case "feed-like":{store.likes[id]=!store.likes[id];saveStore();el.classList.toggle("liked",store.likes[id]);el.querySelector("span").textContent=likeCount(id);if(store.likes[id]){el.classList.add("pop");setTimeout(()=>el.classList.remove("pop"),300);}return;}
+    case "feed-like":{store.likes[id]=!store.likes[id];saveStore();el.classList.toggle("liked",store.likes[id]);el.querySelector("span").textContent=likeCount(id)||"赞";if(store.likes[id]){el.classList.add("pop");setTimeout(()=>el.classList.remove("pop"),300);}return;}
     case "feed-open":if(state.editMode&&state.editingPost)return;state.feedOpen=id;render();window.scrollTo(0,0);return;
     case "post-new":{const t=$("#composerText").value.trim();if(!t){toast("写点什么再发");return;}const imgs=$("#composerImg").value.split(/[,，]/).map(s=>s.trim()).filter(Boolean);DATA.feed.unshift({id:uid(),date:now(),text:t,images:imgs.length?imgs:undefined});state.composerText="";saveDraft();renderFeed();toast("已发布到本地，记得点上方“发布”同步线上");return;}
     case "post-edit":state.editingPost=id;renderFeed();return;
@@ -627,7 +609,7 @@ document.addEventListener("click",e=>{
     case "fav-open":state.favItem=+el.dataset.i;renderFav();window.scrollTo(0,0);return;
     case "fav-back":state.favItem=null;renderFav();return;
     case "fav-add-open":openAddFav();return;
-    case "fav-newfolder":{const nm=prompt("新收藏夹名称：","新收藏夹");if(nm){DATA.fav.push({name:nm.trim()||"新收藏夹",cover:"⭐",items:[]});state.favFolder=DATA.fav.length-1;saveDraft();renderFav();}return;}
+    case "fav-newfolder":{const nm=prompt("新收藏夹名称：","新收藏夹");if(nm){DATA.fav.push({name:nm.trim()||"新收藏夹",items:[]});state.favFolder=DATA.fav.length-1;saveDraft();renderFav();}return;}
     case "fav-folder-rename":{const f=DATA.fav[+el.dataset.i];if(f){const nm=prompt("重命名收藏夹：",f.name);if(nm){f.name=nm.trim()||f.name;saveDraft();renderFav();}}return;}
     case "fav-folder-hide":{const f=DATA.fav[+el.dataset.i];if(f){f.hidden=!f.hidden;saveDraft();renderFav();}return;}
     case "fav-folder-del":{if(confirm("删除整个收藏夹及其内容？")){DATA.fav.splice(+el.dataset.i,1);state.favFolder=0;saveDraft();renderFav();}return;}
@@ -654,7 +636,7 @@ function render(){
 }
 async function boot(){
   await loadData();ensureIds();
-  if(!DATA.profile)DATA.profile={name:"我",avatar:"🙂"};
+  if(!DATA.profile)DATA.profile={name:"我",avatar:""};
   state.expanded=new Set();(function w(nodes){nodes.forEach(n=>{if(n.type==="folder"){state.expanded.add(n.id);w(n.children||[]);}});})(DATA.kb);
   if(!state.kbSel||!locate(state.kbSel))state.kbSel=firstFile();
   if(ownerUnlocked)$("#editBtn").style.display="";
