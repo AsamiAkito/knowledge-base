@@ -382,21 +382,22 @@
   .lightbox img{width:92vw;height:92vh;object-fit:contain;box-shadow:0 24px 70px rgba(0,0,0,.6)}
 
   /* ===== 贡献格 ===== */
-  .cgrid-wrap{overflow:hidden}
-  .cgrid{display:grid;grid-auto-flow:column;grid-template-rows:repeat(7,1fr);
-    grid-template-columns:repeat(53,1fr);gap:1px}
-  .cg{aspect-ratio:1;border-radius:1px;background:var(--bg-soft);border:0}
-  .cg-months{display:grid;grid-template-columns:repeat(53,1fr);gap:1px;margin-bottom:3px;
-    font-family:var(--mono);font-size:7.5px;letter-spacing:0;color:var(--text-dim);overflow:visible}
-  .cg-months span{white-space:nowrap;overflow:visible}
+  .cgrid-wrap{overflow:hidden;--cs:clamp(7px,calc((100vh - 250px)/53 - 2px),17px)}
+  .cgrid{display:grid;grid-template-columns:auto repeat(7,var(--cs));gap:2px;justify-content:center}
+  .cg{width:var(--cs);height:var(--cs);border-radius:2px;background:var(--bg-soft);border:0}
+  .cg-m{font-family:var(--mono);font-size:9px;color:var(--text-dim);
+    padding-right:5px;text-align:right;line-height:var(--cs);white-space:nowrap}
+  .cg-wd{font-family:var(--mono);font-size:8.5px;color:var(--text-dim);text-align:center;
+    line-height:1.4;margin-bottom:1px}
   .cg[data-l="1"]{background:color-mix(in srgb,var(--accent) 28%,transparent);border-color:transparent}
   .cg[data-l="2"]{background:color-mix(in srgb,var(--accent) 50%,transparent);border-color:transparent}
   .cg[data-l="3"]{background:color-mix(in srgb,var(--accent) 74%,transparent);border-color:transparent}
   .cg[data-l="4"]{background:var(--accent);border-color:transparent}
 
-  .cg-legend{display:flex;align-items:center;gap:4px;margin-top:10px;font-family:var(--mono);
-    font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim)}
-  .cg-legend .cg{width:8px;height:8px;aspect-ratio:auto;flex:none}
+  .cg-legend{display:flex;align-items:center;justify-content:center;gap:4px;margin-top:12px;
+    font-family:var(--mono);font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim)}
+  .cg-legend .cg{width:9px;height:9px;flex:none}
+  .cg-total{text-align:center}
   .cg-total{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;color:var(--text-soft);margin-bottom:12px}
   .cg-total b{color:var(--accent);font-size:13px}
 
@@ -925,31 +926,36 @@ async function fetchContrib(force){
   try{localStorage.setItem(KEY,JSON.stringify({owner:cfg.owner,repo:cfg.repo,t:Date.now(),days}))}catch(e){}
   return days;
 }
+const WD=["日","一","二","三","四","五","六"];
 function contribGridHTML(days){
   const today=new Date();today.setHours(0,0,0,0);
   const start=new Date(today);start.setDate(start.getDate()-(52*7+today.getDay()));
   const lvl=n=>n===0?0:n===1?1:n===2?2:n<=4?3:4;
-  let cells="",total=0,spans=[],cur=null;
+  let rows='<span></span>'+WD.map(w=>'<span class="cg-wd">'+w+'</span>').join("");
+  let total=0;
   for(let w=0;w<53;w++){
-    const wd=new Date(start);wd.setDate(wd.getDate()+w*7);
-    if(!cur||cur.m!==wd.getMonth()){cur={m:wd.getMonth(),n:0};spans.push(cur);}
-    cur.n++;
+    /* 这一周若包含某月 1 号，就在行首标出月份数字 */
+    let label="";
     for(let d=0;d<7;d++){
       const day=new Date(start);day.setDate(day.getDate()+w*7+d);
-      if(day>today){cells+='<span class="cg" style="visibility:hidden"></span>';continue;}
+      if(day.getDate()===1&&day<=today){label=String(day.getMonth()+1);break;}
+    }
+    rows+='<span class="cg-m">'+label+'</span>';
+    for(let d=0;d<7;d++){
+      const day=new Date(start);day.setDate(day.getDate()+w*7+d);
+      if(day>today){rows+='<span class="cg" style="visibility:hidden"></span>';continue;}
       const k=dkey(day),n=days[k]||0;total+=n;
-      cells+='<span class="cg"'+(n?' data-l="'+lvl(n)+'"':'')+' title="'+k+' · '+n+' 次修改"></span>';
+      rows+='<span class="cg"'+(n?' data-l="'+lvl(n)+'"':'')+' title="'+k+' · '+n+' 次修改"></span>';
     }
   }
-  const months=spans.map(sp=>'<span style="grid-column:span '+sp.n+'">'+(sp.n>=3?(sp.m+1)+'月':'')+'</span>').join("");
   return '<div class="cg-total">近一年 <b>'+total+'</b> 次修改</div>'
-    +'<div class="cgrid-wrap"><div class="cg-months">'+months+'</div><div class="cgrid">'+cells+'</div></div>'
+    +'<div class="cgrid-wrap"><div class="cgrid">'+rows+'</div></div>'
     +'<div class="cg-legend"><span>less</span>'
     +'<span class="cg"></span><span class="cg" data-l="1"></span><span class="cg" data-l="2"></span>'
     +'<span class="cg" data-l="3"></span><span class="cg" data-l="4"></span><span>more</span></div>';
 }
 function railContribHTML(){
-  return '<div class="rail-box"><div class="ph-title">CONTRIBUTIONS</div>'
+  return '<div class="rail-box rail-bare">'
     +'<div id="cgBox"><div class="rail-note">载入中…</div></div></div>';
 }
 async function hydrateContrib(){
