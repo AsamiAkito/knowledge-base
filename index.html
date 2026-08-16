@@ -47,9 +47,14 @@
 
   /* 视口右侧的竖向细线（装饰） */
   body::after{content:"";position:fixed;top:0;bottom:0;
-    right:calc(max(22px,50% - 620px) + 329px);
+    right:12.5%;
     width:1px;background:var(--line);opacity:.6;pointer-events:none;z-index:1}
   @media(max-width:1080px){body::after{display:none}}
+  /* 横分割线：固定在视口，距底部 1/5 */
+  body::before{content:"";position:fixed;left:0;right:0;bottom:20vh;height:1px;z-index:1;pointer-events:none;
+    background:linear-gradient(to right,transparent 0 22px,var(--accent) 22px 78px,
+      color-mix(in srgb,var(--line) 60%,transparent) 78px)}
+  @media(max-width:1080px){body::before{display:none}}
 
   /* 通用微标签：大写拉丁 + 宽字距 + 青色短杠 */
   .ph-title{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10.5px;font-weight:700;
@@ -398,6 +403,7 @@
 
   /* ===== 页面底部分割线 + 页脚 ===== */
   .site-foot{border-top:1px solid var(--line);margin-top:40px;position:relative}
+  @media(min-width:1081px){.site-foot{border-top-color:transparent}.site-foot::after{display:none}}
   .site-foot::after{content:"";position:absolute;left:22px;top:-1px;width:56px;height:2px;background:var(--accent)}
   .foot-row{max-width:1240px;margin:0 auto;padding:10px 22px 17px;display:flex;align-items:center;gap:14px;
     flex-wrap:wrap;font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-dim)}
