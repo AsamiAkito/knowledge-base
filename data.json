@@ -36,10 +36,10 @@
     },
     {
       "label": "微信",
-      "value": "",
+      "value": "秋渡",
       "url": "",
       "icon": "",
-      "qr": ""
+      "qr": "assets/wechat-qr.jpg"
     },
     {
       "label": "小红书",
