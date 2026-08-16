@@ -189,7 +189,7 @@
     padding:8px 12px;font-size:13px;color:var(--text);outline:0}
 
   /* ===== 知识库 ===== */
-  .kb{display:grid;grid-template-columns:246px minmax(0,1fr);gap:22px;align-items:start}
+  .kb{display:grid;grid-template-columns:246px minmax(0,1fr) 250px;gap:22px;align-items:start}
   .kb-tree{position:sticky;top:82px;padding:14px 10px;max-height:calc(100vh - 110px);overflow:auto}
   body.editing .kb-tree{top:124px}
   .kb-tree .ph-title{padding:4px 8px 12px}
@@ -353,8 +353,7 @@
   .feed-layout{grid-template-columns:minmax(0,1fr)}
   /* 右栏：固定在竖线右侧的 1/6 区域内 */
   .rail{position:fixed;right:0;top:78px;width:16.6667vw;padding:0 14px;
-    display:flex;flex-direction:column;gap:14px;
-    max-height:calc(100vh - 96px);overflow-y:auto;overflow-x:hidden;z-index:5}
+    display:flex;flex-direction:column;gap:14px;overflow:visible;z-index:30}
   body.editing .rail{top:120px}
   @media(min-width:1081px){body{padding-right:16.6667vw}}
   .rail-box{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px}
@@ -362,27 +361,29 @@
   .rail-note{font-size:12px;color:var(--text-dim);line-height:1.7}
 
   /* ===== 照片墙 ===== */
-  .photowall{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-  .photo{position:relative;aspect-ratio:1;overflow:hidden;border:1px solid var(--line);
-    border-radius:var(--r);background:var(--bg-soft);cursor:grab;touch-action:none}
-  .photo.wide{grid-column:span 2;aspect-ratio:16/10}
+  .photowall{display:flex;flex-direction:column;align-items:center;gap:14px}
+  .photo{position:relative;width:100%;cursor:grab;touch-action:none;
+    transform-origin:center center;will-change:transform}
   .photo:active{cursor:grabbing}
-  .photo img{width:100%;height:100%;object-fit:cover;display:block;transform-origin:center center;
-    will-change:transform;user-select:none;-webkit-user-drag:none;pointer-events:none}
-  .photo.zoomed{border-color:var(--accent)}
-  .photo::after{content:"";position:absolute;right:0;bottom:0;width:9px;height:9px;
-    border-right:2px solid var(--accent);border-bottom:2px solid var(--accent);opacity:0;transition:opacity .2s}
-  .photo:hover::after{opacity:1}
+  .photo.dragging{z-index:60}
+  .photo img{width:100%;height:auto;display:block;
+    user-select:none;-webkit-user-drag:none;pointer-events:none}
   .photo .pdel{position:absolute;left:4px;top:4px;z-index:2;opacity:0;transition:opacity .18s}
   .photo:hover .pdel{opacity:1}
   .rail-bare{background:none;border:0;padding:0}
+  .lightbox{position:fixed;inset:0;background:rgba(8,9,11,.93);z-index:95;display:flex;
+    align-items:center;justify-content:center;cursor:zoom-out;animation:lbin .18s ease}
+  @keyframes lbin{from{opacity:0}to{opacity:1}}
+  .lightbox img{width:92vw;height:92vh;object-fit:contain;box-shadow:0 24px 70px rgba(0,0,0,.6)}
 
   /* ===== 贡献格 ===== */
   .cgrid-wrap{overflow:hidden}
-  .cgrid{display:grid;grid-template-columns:auto repeat(31,1fr);gap:2px;align-items:center}
-  .cg{aspect-ratio:1;border-radius:1px;background:var(--bg-soft);border:1px solid var(--line-s)}
-  .cg-m{font-family:var(--mono);font-size:8px;letter-spacing:.02em;color:var(--text-dim);
-    padding-right:4px;text-align:right;white-space:nowrap}
+  .cgrid{display:grid;grid-auto-flow:column;grid-template-rows:repeat(7,1fr);
+    grid-template-columns:repeat(53,1fr);gap:1px}
+  .cg{aspect-ratio:1;border-radius:1px;background:var(--bg-soft);border:0}
+  .cg-months{display:grid;grid-template-columns:repeat(53,1fr);gap:1px;margin-bottom:3px;
+    font-family:var(--mono);font-size:7.5px;letter-spacing:0;color:var(--text-dim);overflow:visible}
+  .cg-months span{white-space:nowrap;overflow:visible}
   .cg[data-l="1"]{background:color-mix(in srgb,var(--accent) 28%,transparent);border-color:transparent}
   .cg[data-l="2"]{background:color-mix(in srgb,var(--accent) 50%,transparent);border-color:transparent}
   .cg[data-l="3"]{background:color-mix(in srgb,var(--accent) 74%,transparent);border-color:transparent}
@@ -395,8 +396,8 @@
   .cg-total b{color:var(--accent);font-size:13px}
 
   /* ===== 联系方式 ===== */
-  .contacts{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
-  .contact{position:relative;aspect-ratio:1;display:flex;align-items:center;justify-content:center;
+  .contacts{display:flex;flex-direction:column;align-items:center;gap:8px}
+  .contact{position:relative;width:100%;max-width:74px;aspect-ratio:1;display:flex;align-items:center;justify-content:center;
     border:1px solid var(--line);border-radius:var(--r);background:var(--bg-soft);
     color:var(--text-soft);text-decoration:none;cursor:pointer;overflow:hidden;transition:all .18s}
   .contact:hover{color:var(--accent);border-color:var(--accent);text-decoration:none}
@@ -448,13 +449,7 @@
 <main id="app"></main>
 
 <footer class="site-foot">
-  <div class="foot-row">
-    <span id="footBrand">AKITO'S SPACE</span>
-    <span class="sep">//</span>
-    <span>动态 · 知识库 · 收藏</span>
-    <div class="spacer"></div>
-    <span id="footStat"></span>
-  </div>
+  <div class="foot-row"></div>
 </footer>
 <input type="file" id="importInput" accept=".md,.markdown,.txt,text/plain" multiple style="display:none">
 <input type="file" id="photoInput" accept="image/*" multiple style="display:none">
@@ -666,7 +661,8 @@ function renderKB(){
   const notesHTML=notes.length?notes.map((nt,idx)=>'<div class="sticky" id="note-'+(idx+1)+'" data-action="kb-note" data-n="'+(idx+1)+'"><span class="n">'+(idx+1)+'</span>'+esc(nt.text)+'</div>').join(""):'<div class="hint">这篇没有便签。'+(em?'<br>编辑文档时在下方“便签”里添加，会对应正文的 ==高亮==。':'')+'</div>';
   app.innerHTML='<div class="kb"><aside class="panel kb-tree"><div class="ph-title">DIRECTORY</div>'+tools+treeHTML(DATA.kb,0)+'</aside>'
     +'<section class="panel kb-main">'+mid+'</section>'
-    +'<aside class="rail">'+railContribHTML()+'<div class="rail-box"><div class="ph-title">NOTES</div>'+notesHTML+'</div></aside></div>';
+    +'<aside class="panel kb-notes"><div class="ph-title">NOTES</div>'+notesHTML+'</aside>'
+    +'<aside class="rail">'+railContribHTML()+'</aside></div>';
   hydrateContrib();
 }
 
@@ -870,9 +866,20 @@ const CONTACT_SEED=[
 const photoView={};   /* {id:{x,y,s}} 仅本次浏览有效，人人可自由缩放移动 */
 function pv(id){return photoView[id]||(photoView[id]={x:0,y:0,s:1});}
 function applyPV(el){
-  const id=el.dataset.pid,v=pv(id),img=el.querySelector("img");
-  if(img)img.style.transform="translate("+v.x+"px,"+v.y+"px) scale("+v.s+")";
-  el.classList.toggle("zoomed",Math.abs(v.s-1)>.01||v.x!==0||v.y!==0);
+  const v=pv(el.dataset.pid);
+  el.style.transform="translate("+v.x+"px,"+v.y+"px) scale("+v.s+")";
+  el.classList.toggle("moved",v.x!==0||v.y!==0||Math.abs(v.s-1)>.01);
+}
+/* 单击：在页面正中放大到接近全屏 */
+function openLightbox(src){
+  if(!src)return;
+  const bg=document.createElement("div");bg.className="lightbox";
+  bg.innerHTML='<img src="'+esc(src)+'" alt="">';
+  const close=()=>{bg.remove();document.removeEventListener("keydown",onKey);};
+  const onKey=e=>{if(e.key==="Escape")close();};
+  bg.addEventListener("click",close);
+  document.addEventListener("keydown",onKey);
+  document.body.appendChild(bg);
 }
 function applyAllPV(){document.querySelectorAll(".photo").forEach(applyPV);}
 
@@ -913,22 +920,23 @@ async function fetchContrib(force){
 }
 function contribGridHTML(days){
   const today=new Date();today.setHours(0,0,0,0);
+  const start=new Date(today);start.setDate(start.getDate()-(52*7+today.getDay()));
   const lvl=n=>n===0?0:n===1?1:n===2?2:n<=4?3:4;
-  let rows="",total=0;
-  for(let k=11;k>=0;k--){                       /* 从本月往前 12 个月 */
-    const m=new Date(today.getFullYear(),today.getMonth()-k,1);
-    const dim=new Date(m.getFullYear(),m.getMonth()+1,0).getDate();
-    rows+='<span class="cg-m">'+(m.getMonth()+1)+'月</span>';
-    for(let d=1;d<=31;d++){
-      if(d>dim){rows+='<span class="cg" style="visibility:hidden"></span>';continue;}
-      const day=new Date(m.getFullYear(),m.getMonth(),d);
-      if(day>today){rows+='<span class="cg" style="visibility:hidden"></span>';continue;}
-      const k2=dkey(day),n=days[k2]||0;total+=n;
-      rows+='<span class="cg" data-l="'+lvl(n)+'" title="'+k2+' · '+n+' 次修改"></span>';
+  let cells="",total=0,spans=[],cur=null;
+  for(let w=0;w<53;w++){
+    const wd=new Date(start);wd.setDate(wd.getDate()+w*7);
+    if(!cur||cur.m!==wd.getMonth()){cur={m:wd.getMonth(),n:0};spans.push(cur);}
+    cur.n++;
+    for(let d=0;d<7;d++){
+      const day=new Date(start);day.setDate(day.getDate()+w*7+d);
+      if(day>today){cells+='<span class="cg" style="visibility:hidden"></span>';continue;}
+      const k=dkey(day),n=days[k]||0;total+=n;
+      cells+='<span class="cg"'+(n?' data-l="'+lvl(n)+'"':'')+' title="'+k+' · '+n+' 次修改"></span>';
     }
   }
+  const months=spans.map(sp=>'<span style="grid-column:span '+sp.n+'">'+(sp.n>=3?(sp.m+1)+'月':'')+'</span>').join("");
   return '<div class="cg-total">近一年 <b>'+total+'</b> 次修改</div>'
-    +'<div class="cgrid-wrap"><div class="cgrid">'+rows+'</div></div>'
+    +'<div class="cgrid-wrap"><div class="cg-months">'+months+'</div><div class="cgrid">'+cells+'</div></div>'
     +'<div class="cg-legend"><span>less</span>'
     +'<span class="cg"></span><span class="cg" data-l="1"></span><span class="cg" data-l="2"></span>'
     +'<span class="cg" data-l="3"></span><span class="cg" data-l="4"></span><span>more</span></div>';
@@ -1022,6 +1030,7 @@ async function uploadPendingPhotos(cfg,headers){
     if(e.target.closest("[data-action]"))return;      /* 删除按钮不触发拖动 */
     const v=pv(el.dataset.pid);
     drag={el:el,id:el.dataset.pid,sx:e.clientX,sy:e.clientY,ox:v.x,oy:v.y,moved:0};
+    el.classList.add("dragging");
     el.setPointerCapture&&el.setPointerCapture(e.pointerId);
   });
   document.addEventListener("pointermove",e=>{
@@ -1032,12 +1041,12 @@ async function uploadPendingPhotos(cfg,headers){
   });
   document.addEventListener("pointerup",e=>{
     if(!drag)return;const d=drag;drag=null;
+    if(d.moved<=4)d.el.classList.remove("dragging");
     if(d.moved>4)return;                               /* 拖动过就不算点击 */
     clearTimeout(clickTimer);
     clickTimer=setTimeout(()=>{                        /* 等一下，看是不是双击 */
-      const v=pv(d.id);
-      v.s=v.s>=MAXS-.01?1:Math.min(MAXS,+(v.s*1.5).toFixed(3));
-      applyPV(d.el);
+      const img=d.el.querySelector("img");
+      if(img)openLightbox(img.getAttribute("src"));
     },230);
   });
   document.addEventListener("dblclick",e=>{
@@ -1056,9 +1065,7 @@ async function uploadPendingPhotos(cfg,headers){
 
 function render(){
   document.querySelectorAll("nav.tabs button").forEach(b=>b.classList.toggle("active",b.dataset.view===state.view));
-  const fb=$("#footBrand"),fs=$("#footStat");
-  if(fb){const bn=document.querySelector(".brand");fb.textContent=bn?(bn.firstChild.textContent||"").trim():"MY SPACE";}
-  if(fs)fs.textContent=(DATA.feed||[]).length+" POSTS // "+(DATA.photos||[]).length+" PHOTOS";
+
   if(state.view==="feed")renderFeed();else if(state.view==="kb")renderKB();else renderFav();
 }
 async function boot(){
