@@ -382,13 +382,15 @@
   .lightbox img{width:92vw;height:92vh;object-fit:contain;box-shadow:0 24px 70px rgba(0,0,0,.6)}
 
   /* ===== 贡献格 ===== */
-  .cgrid-wrap{overflow:hidden;--cs:clamp(7px,calc((100vh - 250px)/53 - 2px),17px)}
-  .cgrid{display:grid;grid-template-columns:auto repeat(7,var(--cs));gap:2px;justify-content:center}
-  .cg{width:var(--cs);height:var(--cs);border-radius:2px;background:var(--bg-soft);border:0}
+  /* 格子为扁长方形：横向铺满、纵向压缩 */
+  .cgrid-wrap{overflow:hidden;--ch:clamp(4px,calc((100vh - 280px)/53 - 2px),9px)}
+  .cgrid{display:grid;grid-template-columns:auto repeat(7,1fr);gap:2px;
+    width:100%;max-width:300px;margin:0 auto}
+  .cg{width:auto;height:var(--ch);border-radius:2px;background:var(--bg-soft);border:0}
   .cg-m{font-family:var(--mono);font-size:9px;color:var(--text-dim);
-    padding-right:5px;text-align:right;line-height:var(--cs);white-space:nowrap}
-  .cg-wd{font-family:var(--mono);font-size:8.5px;color:var(--text-dim);text-align:center;
-    line-height:1.4;margin-bottom:1px}
+    padding-right:6px;text-align:right;line-height:var(--ch);white-space:nowrap}
+  .cg-wd{font-family:var(--mono);font-size:9px;color:var(--text-dim);text-align:center;
+    line-height:1.4;margin-bottom:2px}
   .cg[data-l="1"]{background:color-mix(in srgb,var(--accent) 28%,transparent);border-color:transparent}
   .cg[data-l="2"]{background:color-mix(in srgb,var(--accent) 50%,transparent);border-color:transparent}
   .cg[data-l="3"]{background:color-mix(in srgb,var(--accent) 74%,transparent);border-color:transparent}
