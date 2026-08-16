@@ -1,7 +1,11 @@
 {
   "version": 1,
-  "profile": { "name": "我", "avatar": "🙂" },
   "feed": [
+    {
+      "id": "nqssd4t3te",
+      "date": "2026-08-16 11:08",
+      "text": "准备整个个人blog之类的网页，发些没人会看见的碎碎念，存些自己会忘掉的东西，以便INFP人的怀旧时刻发生时，有个能回顾的地方..."
+    },
     {
       "id": "p3",
       "date": "2026-08-11 21:40",
@@ -11,13 +15,19 @@
       "id": "p2",
       "date": "2026-08-10 12:05",
       "text": "> 你把注意力放在哪里，你就成为什么样的人。\n\n专注不是刻意用力地集中，而是**减少需要做选择的时刻**——把环境和下一步提前准备好，真正开始时就不必再消耗意志力。",
-      "images": ["🌅", "📖", "☕"]
+      "images": [
+        "🌅",
+        "📖",
+        "☕"
+      ]
     },
     {
       "id": "p1",
       "date": "2026-08-08 09:12",
       "text": "遇到卡住的问题，我常用三个提问把它拆小：\n\n1. 真正要解决的是什么？\n2. 最小可验证的一步是什么？\n3. 最坏会怎样？\n\n大多数不知道从哪开始，本质是问题还太大。",
-      "images": ["💡"]
+      "images": [
+        "💡"
+      ]
     }
   ],
   "kb": [
@@ -35,10 +45,17 @@
               "id": "k3",
               "type": "file",
               "name": "CSS Grid 布局",
-              "tags": ["CSS", "布局"],
+              "tags": [
+                "CSS",
+                "布局"
+              ],
               "notes": [
-                { "text": "fr 是剩余空间的一份，比百分比好用，会自动扣掉 gap。" },
-                { "text": "auto-fill 与 auto-fit：列不够时前者留空轨道，后者拉伸填满。" }
+                {
+                  "text": "fr 是剩余空间的一份，比百分比好用，会自动扣掉 gap。"
+                },
+                {
+                  "text": "auto-fill 与 auto-fit：列不够时前者留空轨道，后者拉伸填满。"
+                }
               ],
               "body": "Grid 是二维布局系统，同时控制行与列。\n\n## 定义网格\n容器上写 `display:grid`，再用 `grid-template-columns` 定义列：\n\n```css\n.grid{\n  display:grid;\n  grid-template-columns:repeat(3,1fr);\n  gap:16px;\n}\n```\n\n==`1fr` 表示剩余空间的一份==，三列就是三等分，而且 `gap` 会被自动扣除。\n\n## 响应式一行搞定\n\n```css\ngrid-template-columns:repeat(auto-fill,minmax(220px,1fr));\n```\n\n==`auto-fill` 会保留空轨道，`auto-fit` 会压缩空轨道、让已有列拉伸填满==。"
             },
@@ -46,9 +63,13 @@
               "id": "k4",
               "type": "file",
               "name": "防抖与节流",
-              "tags": ["JavaScript"],
+              "tags": [
+                "JavaScript"
+              ],
               "notes": [
-                { "text": "记忆法：防抖=等你说完再回答；节流=每隔几秒才回答一次。" }
+                {
+                  "text": "记忆法：防抖=等你说完再回答；节流=每隔几秒才回答一次。"
+                }
               ],
               "body": "两个都是控制高频事件触发频率的技巧。\n\n- ==防抖(debounce)：事件停止 N 毫秒后才执行==，适合搜索输入。\n- 节流(throttle)：每 N 毫秒最多执行一次，适合滚动、resize。\n\n```js\nfunction debounce(fn, wait){\n  let t;\n  return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), wait); };\n}\n```"
             }
@@ -63,7 +84,9 @@
               "id": "k6",
               "type": "file",
               "name": "Git 常用命令",
-              "tags": ["Git"],
+              "tags": [
+                "Git"
+              ],
               "body": "```bash\ngit switch -c feature   # 新建并切换分支\ngit restore file        # 撤销工作区改动\ngit commit --amend      # 修改上一次提交\n```\n\n> 提交信息写清为什么改，比写改了什么更值钱。"
             }
           ]
@@ -79,8 +102,15 @@
           "id": "k8",
           "type": "file",
           "name": "关于专注 · 摘录",
-          "tags": ["阅读", "思考"],
-          "notes": [{ "text": "这句可以贴在显示器上。" }],
+          "tags": [
+            "阅读",
+            "思考"
+          ],
+          "notes": [
+            {
+              "text": "这句可以贴在显示器上。"
+            }
+          ],
           "body": "==你把注意力放在哪里，你就成为什么样的人。==\n\n减少选择的时刻，比强行集中更有效。清单、环境、下一步——都提前准备好。"
         }
       ]
@@ -89,7 +119,9 @@
       "id": "k9",
       "type": "file",
       "name": "README · 怎么用",
-      "tags": ["说明"],
+      "tags": [
+        "说明"
+      ],
       "body": "点右上角 **✎ 编辑** 进入编辑模式，就能：发动态、改知识库结构、导入文件、重命名、隐藏、下载。\n\n改完点 **发布** 更新线上网站（需在设置里填一次 GitHub 令牌），或 **导出** data.json 手动备份。"
     }
   ],
@@ -98,23 +130,38 @@
       "name": "稍后再看",
       "cover": "🎬",
       "items": [
-        { "title": "Grid 布局完整教程", "url": "https://www.youtube.com/watch?v=rg7Fvvl3taU" },
-        { "title": "【纪录片】神奇的材料科学", "url": "https://www.bilibili.com/video/BV1GJ411x7h7" }
+        {
+          "title": "Grid 布局完整教程",
+          "url": "https://www.youtube.com/watch?v=rg7Fvvl3taU"
+        },
+        {
+          "title": "【纪录片】神奇的材料科学",
+          "url": "https://www.bilibili.com/video/BV1GJ411x7h7"
+        }
       ]
     },
     {
       "name": "设计灵感",
       "cover": "🎨",
       "items": [
-        { "title": "Excalidraw — 手绘风白板", "url": "https://excalidraw.com/" },
-        { "title": "MDN Web Docs", "url": "https://developer.mozilla.org/" }
+        {
+          "title": "Excalidraw — 手绘风白板",
+          "url": "https://excalidraw.com/"
+        },
+        {
+          "title": "MDN Web Docs",
+          "url": "https://developer.mozilla.org/"
+        }
       ]
     },
     {
       "name": "想读的文章",
       "cover": "📚",
       "items": [
-        { "title": "深入理解 Flexbox", "url": "https://css-tricks.com/snippets/css/a-guide-to-flexbox/" }
+        {
+          "title": "深入理解 Flexbox",
+          "url": "https://css-tricks.com/snippets/css/a-guide-to-flexbox/"
+        }
       ]
     }
   ]
