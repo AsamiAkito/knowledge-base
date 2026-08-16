@@ -22,8 +22,8 @@
   "contacts": [
     {
       "label": "bilibili",
-      "value": "",
-      "url": "",
+      "value": "B站主页",
+      "url": "https://space.bilibili.com/36023418",
       "icon": "",
       "qr": ""
     },
@@ -43,8 +43,8 @@
     },
     {
       "label": "小红书",
-      "value": "",
-      "url": "",
+      "value": "小红书主页",
+      "url": "https://www.rednote.com/user/profile/5fc7e8e90000000001000281",
       "icon": "",
       "qr": ""
     },
