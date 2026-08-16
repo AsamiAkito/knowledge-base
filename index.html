@@ -47,14 +47,15 @@
 
   /* 视口右侧的竖向细线（装饰） */
   body::after{content:"";position:fixed;top:0;bottom:0;
-    right:16.6667vw;
+    right:20vw;
     width:1px;background:var(--line);opacity:.6;pointer-events:none;z-index:1}
   @media(max-width:1080px){body::after{display:none}}
-  /* 横分割线：固定在视口，距底部 1/5 */
-  body::before{content:"";position:fixed;left:0;right:0;bottom:20vh;height:1px;z-index:1;pointer-events:none;
-    background:linear-gradient(to right,transparent 0 22px,var(--accent) 22px 78px,
-      color-mix(in srgb,var(--line) 60%,transparent) 78px)}
-  @media(max-width:1080px){body::before{display:none}}
+  /* 横分割线：固定在视口，距底部 1/5；青色段会滑到当前板块下方 */
+  .hline{position:fixed;left:0;right:0;bottom:20vh;height:1px;z-index:1;pointer-events:none;
+    background:color-mix(in srgb,var(--line) 60%,transparent)}
+  .hline-mark{position:absolute;top:-1px;left:0;height:3px;width:280px;background:var(--accent);
+    transform:translateX(22px);transition:transform .5s cubic-bezier(.33,1,.68,1);will-change:transform}
+  @media(max-width:1080px){.hline{display:none}}
 
   /* 通用微标签：大写拉丁 + 宽字距 + 青色短杠 */
   .ph-title{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10.5px;font-weight:700;
@@ -352,10 +353,14 @@
   .with-rail{display:grid;gap:24px;align-items:start}
   .feed-layout{grid-template-columns:minmax(0,1fr)}
   /* 右栏：固定在竖线右侧的 1/6 区域内 */
-  .rail{position:fixed;right:0;top:78px;width:16.6667vw;padding:0 14px;
+  .rail{position:fixed;right:0;top:78px;width:20vw;padding:0 14px;
     display:flex;flex-direction:column;gap:14px;overflow:visible;z-index:30}
   body.editing .rail{top:120px}
-  @media(min-width:1081px){body{padding-right:16.6667vw}}
+  @media(min-width:1081px){
+    body{padding-right:20vw}
+    /* 动态：把正文推回整个页面的水平中心（内容区中心比页面中心左偏 10vw） */
+    body[data-view="feed"] .feed{transform:translateX(10vw)}
+  }
   .rail-box{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px}
   .rail-box .ph-title{margin-bottom:14px}
   .rail-note{font-size:12px;color:var(--text-dim);line-height:1.7}
@@ -445,6 +450,8 @@
     <button class="btn sm soft" data-action="edit-toggle">完成</button>
   </div>
 </div>
+
+<div class="hline"><span class="hline-mark" id="hlineMark"></span></div>
 
 <main id="app"></main>
 
@@ -1063,8 +1070,22 @@ async function uploadPendingPhotos(cfg,headers){
   },{passive:false});
 })();
 
+/* 横分割线上的青色段：滑到当前板块正下方 */
+function moveHLine(){
+  const mark=$("#hlineMark");if(!mark)return;
+  const btn=document.querySelector('nav.tabs button[data-view="'+state.view+'"]');if(!btn)return;
+  const r=btn.getBoundingClientRect();
+  const w=mark.offsetWidth||280;
+  let x=r.left+r.width/2-w/2;                     /* 与该板块居中对齐 */
+  x=Math.max(22,Math.min(x,innerWidth-w-22));     /* 不超出屏幕两端 */
+  mark.style.transform="translateX("+Math.round(x)+"px)";
+}
+addEventListener("resize",moveHLine);
+
 function render(){
+  document.body.dataset.view=state.view;
   document.querySelectorAll("nav.tabs button").forEach(b=>b.classList.toggle("active",b.dataset.view===state.view));
+  moveHLine();
 
   if(state.view==="feed")renderFeed();else if(state.view==="kb")renderKB();else renderFav();
 }
