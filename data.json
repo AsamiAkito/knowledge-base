@@ -24,31 +24,36 @@
       "label": "bilibili",
       "value": "",
       "url": "",
-      "icon": ""
+      "icon": "",
+      "qr": ""
     },
     {
       "label": "抖音",
       "value": "",
       "url": "",
-      "icon": ""
+      "icon": "",
+      "qr": ""
     },
     {
       "label": "微信",
       "value": "",
       "url": "",
-      "icon": ""
+      "icon": "",
+      "qr": ""
     },
     {
       "label": "小红书",
       "value": "",
       "url": "",
-      "icon": ""
+      "icon": "",
+      "qr": ""
     },
     {
       "label": "instagram",
       "value": "",
       "url": "",
-      "icon": ""
+      "icon": "",
+      "qr": ""
     }
   ]
 }
