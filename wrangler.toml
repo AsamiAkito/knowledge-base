@@ -1,0 +1,7 @@
+# Cloudflare Workers 静态站点配置
+# 把整个仓库根目录作为静态资源发布（本站是纯静态页面，无需构建）
+name = "knowledge-base"
+compatibility_date = "2026-08-01"
+
+[assets]
+directory = "./"
