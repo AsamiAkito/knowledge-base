@@ -505,6 +505,7 @@ const app=$("#app");
 const uid=()=>"n"+Math.random().toString(36).slice(2,8)+Date.now().toString(36).slice(-3);
 function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2600);}
 
+const KEY_CACHE="myspace-cache";
 const KEY_STORE="myspace-store",KEY_DRAFT="myspace-draft",KEY_GH="myspace-gh",KEY_OWNER="myspace-owner",KEY_THEME="ms-theme";
 let store=(()=>{try{return JSON.parse(localStorage.getItem(KEY_STORE))||{}}catch(e){return{}}})();
 store.likes=store.likes||{};store.cmts=store.cmts||{};
@@ -571,7 +572,21 @@ function collectFolders(banId){const out=[];(function w(nodes,d){nodes.forEach(n
 function targetChildren(){const s=state.kbSel?locate(state.kbSel):null;if(s&&s.node.type==="folder"){state.expanded.add(s.node.id);return s.node.children;}if(s)return s.parent;return DATA.kb;}
 
 async function loadData(){
-  try{const r=await fetch("data.json?_="+Date.now(),{cache:"no-store"});if(r.ok){const j=await r.json();if(j&&j.feed){DATA=j;dirty=false;return;}}}catch(e){}
+  /* 失败重试一次：网络抖动时不要让内容“消失” */
+  for(let i=0;i<2;i++){
+    try{
+      const r=await fetch("data.json?_="+Date.now(),{cache:"no-store"});
+      if(r.ok){const j=await r.json();
+        if(j&&j.feed){DATA=j;dirty=false;
+          try{localStorage.setItem(KEY_CACHE,JSON.stringify(j))}catch(e){}
+          return;}}
+    }catch(e){}
+    if(i===0)await new Promise(r=>setTimeout(r,700));
+  }
+  /* 仍取不到 -> 用上次成功加载的线上内容，而不是空白种子 */
+  try{const c=JSON.parse(localStorage.getItem(KEY_CACHE));
+    if(c&&c.feed){DATA=c;dirty=false;
+      setTimeout(()=>toast("网络不稳，暂时显示上次缓存的内容"),900);return;}}catch(e){}
   DATA=JSON.parse(JSON.stringify(SEED));dirty=false;
 }
 
