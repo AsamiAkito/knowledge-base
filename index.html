@@ -366,6 +366,9 @@
     main::-webkit-scrollbar{width:0;height:0}
     main{scrollbar-width:none}
     .kb-tree,.kb-notes,.fav-side{top:0;max-height:calc(80vh - 108px)}
+    /* 知识库整体右移，使 DIRECTORY 左边缘与顶栏“秋”字对齐
+       1196 = 顶栏内容宽 1240 减去 main 左右各 22 的内边距 */
+    .kb,.fav{max-width:1196px;margin:0 auto}
     /* 右栏：内容用滚轮上下滑动（不裁剪，照片仍可拖出） */
     .rail{top:62px;height:calc(80vh - 62px);overflow:visible}
     .rail-scroll{display:flex;flex-direction:column;gap:14px;
