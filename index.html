@@ -46,9 +46,10 @@
   button,textarea,input,select{font-family:inherit}
 
   /* 视口右侧的竖向细线（装饰） */
-  body::after{content:"";position:fixed;top:0;bottom:0;right:max(22px,calc(50% - 620px));
+  body::after{content:"";position:fixed;top:0;bottom:0;
+    right:calc(max(22px,50% - 620px) + 329px);
     width:1px;background:var(--line);opacity:.6;pointer-events:none;z-index:1}
-  @media(max-width:900px){body::after{display:none}}
+  @media(max-width:1080px){body::after{display:none}}
 
   /* 通用微标签：大写拉丁 + 宽字距 + 青色短杠 */
   .ph-title{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10.5px;font-weight:700;
@@ -344,7 +345,7 @@
 
   /* ===== 右侧栏（三个板块共用同一位置） ===== */
   .with-rail{display:grid;gap:24px;align-items:start}
-  .feed-layout{grid-template-columns:minmax(0,660px) 296px;justify-content:center}
+  .feed-layout{grid-template-columns:minmax(0,1fr) 296px}
   .rail{position:sticky;top:82px;display:flex;flex-direction:column;gap:18px}
   body.editing .rail{top:124px}
   .rail-box{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px}
@@ -398,12 +399,12 @@
   /* ===== 页面底部分割线 + 页脚 ===== */
   .site-foot{border-top:1px solid var(--line);margin-top:40px;position:relative}
   .site-foot::after{content:"";position:absolute;left:22px;top:-1px;width:56px;height:2px;background:var(--accent)}
-  .foot-row{max-width:1240px;margin:0 auto;padding:20px 22px 34px;display:flex;align-items:center;gap:14px;
+  .foot-row{max-width:1240px;margin:0 auto;padding:10px 22px 17px;display:flex;align-items:center;gap:14px;
     flex-wrap:wrap;font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-dim)}
   .foot-row .sep{opacity:.5}
 
   @media(max-width:1080px){
-    .feed-layout{grid-template-columns:minmax(0,660px);justify-content:center}
+    .feed-layout{grid-template-columns:minmax(0,1fr)}
     .feed-layout .rail{display:none}
   }
   @media(max-width:760px){.rail{position:static}}
