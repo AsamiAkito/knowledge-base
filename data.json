@@ -1,6 +1,9 @@
 {
   "version": 1,
-  "profile": { "name": "我", "avatar": "assets/avatar.jpg" },
+  "profile": {
+    "name": "我",
+    "avatar": "assets/avatar.jpg"
+  },
   "feed": [
     {
       "id": "nqssd4t3te",
@@ -9,5 +12,33 @@
     }
   ],
   "kb": [],
-  "fav": []
+  "fav": [],
+  "photos": [],
+  "contacts": [
+    {
+      "label": "bilibili",
+      "value": "",
+      "url": ""
+    },
+    {
+      "label": "抖音",
+      "value": "",
+      "url": ""
+    },
+    {
+      "label": "微信",
+      "value": "",
+      "url": ""
+    },
+    {
+      "label": "小红书",
+      "value": "",
+      "url": ""
+    },
+    {
+      "label": "instagram",
+      "value": "",
+      "url": ""
+    }
+  ]
 }
