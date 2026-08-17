@@ -608,11 +608,14 @@ async function loadData(){
   DATA=JSON.parse(JSON.stringify(SEED));dirty=false;
 }
 
-function setEdit(on){state.editMode=on;document.body.classList.toggle("editing",on);$("#editBtn").classList.toggle("on",on);$("#editBtn").textContent=on?"编辑中":"编辑";render();}
+function setEdit(on){state.editMode=on;document.body.classList.toggle("editing",on);$("#editBtn").classList.toggle("on",on);render();updateBar();}
 function hasDraft(){try{const d=JSON.parse(localStorage.getItem(KEY_DRAFT));return !!(d&&d.feed)}catch(e){return false}}
 function updateBar(){const s=$("#tbState"),t=$("#tbText");if(!s)return;s.classList.toggle("dirty",dirty);
   t.textContent=dirty?"有未发布的修改":(hasDraft()?"显示线上版本（有未发布草稿）":"已同步线上");
-  const rb=$("#restoreBtn");if(rb)rb.style.display=(!dirty&&hasDraft())?"":"none";}
+  const rb=$("#restoreBtn");if(rb)rb.style.display=(!dirty&&hasDraft())?"":"none";
+  /* 未发布时在“编辑”按钮上留个标记，站主一眼能看出还没同步 */
+  const eb=$("#editBtn");
+  if(eb)eb.textContent=state.editMode?"编辑中":(dirty?"编辑 ●":"编辑");}
 
 function isImg(a){return /^https?:\/\//.test(a)||/^\.?\/?assets\//.test(a)||/^(data:|blob:)/.test(a)||/\.(jpe?g|png|gif|webp|svg|avif)$/i.test(a);}
 function avatarHTML(a){const prof=DATA.profile||{};a=(a===undefined?prof.avatar:a)||"";
@@ -1209,7 +1212,15 @@ function render(){
   if(state.view==="feed")renderFeed();else if(state.view==="kb")renderKB();else renderFav();
 }
 async function boot(){
-  await loadData();ensureIds();
+  await loadData();
+  /* 站主：有未发布草稿时自动恢复，避免刷新后误以为内容丢失（访客始终看已发布版本） */
+  if(ownerUnlocked&&hasDraft()){
+    try{const d=JSON.parse(localStorage.getItem(KEY_DRAFT));
+      if(d&&d.feed){DATA=d;dirty=true;
+        setTimeout(()=>toast("已恢复未发布的草稿 — 记得点“发布到线上”"),700);}
+    }catch(e){}
+  }
+  ensureIds();
   if(!DATA.profile)DATA.profile={name:"我",avatar:""};
   if(!Array.isArray(DATA.photos))DATA.photos=[];
   if(!Array.isArray(DATA.contacts)||!DATA.contacts.length)DATA.contacts=JSON.parse(JSON.stringify(CONTACT_SEED));
