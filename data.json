@@ -41,7 +41,18 @@
           "id": "nt4ki7gvps",
           "type": "folder",
           "name": "尚未看的书",
-          "children": []
+          "children": [
+            {
+              "id": "nj10ntdy8g",
+              "type": "file",
+              "name": "钝感力",
+              "tags": [
+                "渡边淳一"
+              ],
+              "body": "",
+              "notes": []
+            }
+          ]
         }
       ]
     }
