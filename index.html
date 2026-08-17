@@ -362,10 +362,14 @@
     .site-foot{display:none}
     /* 内容区上到顶栏、下到横分割线，内部滚动 */
     main{position:fixed;top:62px;left:0;right:20vw;bottom:16.6667vh;
+      transition:top .15s ease;
       max-width:none;margin:0;padding:26px 22px 20px;overflow-y:auto;overflow-x:hidden}
     main::-webkit-scrollbar{width:0;height:0}
     main{scrollbar-width:none}
     .kb-tree,.kb-notes,.fav-side{top:0;max-height:calc(83.3333vh - 108px)}
+    /* 编辑模式下工具条占一行高度，内容区和右栏一起下移，避免被盖住 */
+    body.editing main{top:var(--tbh,112px)}
+    body.editing .rail{top:var(--tbh,112px);height:calc(83.3333vh - var(--tbh,112px))}
     /* 知识库整体右移，使 DIRECTORY 左边缘与顶栏“秋”字对齐
        1196 = 顶栏内容宽 1240 减去 main 左右各 22 的内边距 */
     .kb,.fav{max-width:1196px;margin:0 auto}
@@ -608,7 +612,20 @@ async function loadData(){
   DATA=JSON.parse(JSON.stringify(SEED));dirty=false;
 }
 
-function setEdit(on){state.editMode=on;document.body.classList.toggle("editing",on);$("#editBtn").classList.toggle("on",on);render();updateBar();}
+/* 编辑工具条会占一行，内容区与右栏需要相应下移，否则会被盖住。
+   直接写行内样式，避免依赖样式重算时机。 */
+function syncToolbarH(){
+  const m=document.querySelector("main"),rail=document.querySelector(".rail");
+  const wide=innerWidth>=1081;
+  if(!wide){ if(m)m.style.top=""; if(rail){rail.style.top="";rail.style.height="";} return; }
+  const tb=document.querySelector(".toolbar");
+  const h=(document.body.classList.contains("editing")&&tb)?Math.round(tb.getBoundingClientRect().height):0;
+  const top=62+h;
+  if(m)m.style.top=top+"px";
+  if(rail){rail.style.top=top+"px";rail.style.height="calc(83.3333vh - "+top+"px)";}
+}
+addEventListener("resize",syncToolbarH);
+function setEdit(on){state.editMode=on;document.body.classList.toggle("editing",on);$("#editBtn").classList.toggle("on",on);render();updateBar();requestAnimationFrame(syncToolbarH);}
 function hasDraft(){try{const d=JSON.parse(localStorage.getItem(KEY_DRAFT));return !!(d&&d.feed)}catch(e){return false}}
 function updateBar(){const s=$("#tbState"),t=$("#tbText");if(!s)return;s.classList.toggle("dirty",dirty);
   t.textContent=dirty?"有未发布的修改":(hasDraft()?"显示线上版本（有未发布草稿）":"已同步线上");
@@ -723,6 +740,21 @@ function renderKB(){
   hydrateContrib();
 }
 
+/* B站接口不允许跨域，但支持 JSONP —— 用 <script> 取封面和标题 */
+function biliInfo(bvid){
+  return new Promise((resolve)=>{
+    const cb="__bili_"+Math.random().toString(36).slice(2,9);
+    const sc=document.createElement("script");
+    let done=false;
+    const finish=(v)=>{if(done)return;done=true;delete window[cb];sc.remove();resolve(v);};
+    window[cb]=(j)=>finish(j&&j.code===0&&j.data?{cover:(j.data.pic||"").replace(/^http:/,"https:"),title:j.data.title}:null);
+    sc.onerror=()=>finish(null);
+    setTimeout(()=>finish(null),6000);
+    sc.src="https://api.bilibili.com/x/web-interface/view?bvid="+encodeURIComponent(bvid)
+      +"&jsonp=jsonp&callback="+cb;
+    document.body.appendChild(sc);
+  });
+}
 function parseSource(url){let m;
   if(m=url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})/))return{src:"YouTube",embed:"https://www.youtube.com/embed/"+m[1],thumb:"https://img.youtube.com/vi/"+m[1]+"/hqdefault.jpg",icon:""};
   if(m=url.match(/bilibili\.com\/video\/(BV[\w]+)/i))return{src:"Bilibili",embed:"https://player.bilibili.com/player.html?bvid="+m[1]+"&page=1&autoplay=0",thumb:null,icon:""};
@@ -742,7 +774,7 @@ function renderFav(){
   }
   const items=(cur.items||[]).filter(it=>em||!it.hidden);
   const grid=items.length?'<div class="fav-grid">'+cur.items.map((it,i)=>{if(!em&&it.hidden)return"";const s=parseSource(it.url);
-      return '<div class="fcard'+(it.hidden?' hidden-item':'')+'"><div class="cover" data-action="fav-open" data-i="'+i+'">'+(s.thumb?'<img src="'+esc(s.thumb)+'" alt="" onerror="this.style.display=\'none\'">':s.icon)+'<span class="src">'+esc(s.src)+'</span>'+'</div>'
+      return '<div class="fcard'+(it.hidden?' hidden-item':'')+'"><div class="cover" data-action="fav-open" data-i="'+i+'">'+((it.cover||s.thumb)?'<img src="'+esc(it.cover||s.thumb)+'" alt="" referrerpolicy="no-referrer" onerror="this.style.display=\'none\'">':s.icon)+'<span class="src">'+esc(s.src)+'</span>'+'</div>'
         +'<div class="info" data-action="fav-open" data-i="'+i+'" style="cursor:pointer"><div class="t">'+esc(it.title)+'</div><div class="u">'+esc(it.url.replace(/^https?:\/\//,''))+'</div></div>'
         +(em?'<div class="fedit"><button class="mini" data-action="fav-item-hide" data-i="'+i+'">'+(it.hidden?'取消隐藏':'隐藏')+'</button><button class="mini danger" data-action="fav-item-del" data-i="'+i+'">删除</button></div>':'')+'</div>';
     }).join("")+'</div>':'<div class="empty">这个收藏夹还是空的'+(em?'，点右上角＋添加。':'。')+'</div>';
@@ -803,15 +835,26 @@ function openAddFav(){
   const bg=modal('<h3>收藏一个网页 / 视频</h3><p class="sub">粘贴链接即可，YouTube、Bilibili 会自动识别并可内嵌播放。</p><form id="addForm">'
     +'<div class="field"><label>链接 URL</label><input name="url" required placeholder="https://…" autocomplete="off"></div>'
     +'<div class="field"><label>标题</label><input name="title" placeholder="留空则用链接作标题" autocomplete="off"></div>'
+    +'<div class="field"><label>封面图片（可留空）</label><input name="cover" placeholder="YouTube / B站会自动获取；也可粘贴图片地址" autocomplete="off"></div>'
     +'<div class="field"><label>收藏到</label><select name="folder">'+DATA.fav.map((f,i)=>'<option value="'+i+'"'+(i===state.favFolder?' selected':'')+'>'+esc(f.name)+'</option>').join("")+'<option value="__new__">＋ 新建收藏夹…</option></select></div>'
     +'<div class="field" id="nfw" style="display:none"><label>新收藏夹名称</label><input name="newFolder" placeholder="例如：教程"></div>'
     +'<div class="modal-actions"><button type="button" class="btn ghost" data-action="modal-close">取消</button><button type="submit" class="btn">收藏</button></div></form>');
   const sel=bg.querySelector("[name=folder]"),nfw=bg.querySelector("#nfw");
   sel.addEventListener("change",()=>nfw.style.display=sel.value==="__new__"?"block":"none");
-  bg.querySelector("#addForm").addEventListener("submit",e=>{e.preventDefault();const fd=new FormData(e.target);let url=(fd.get("url")||"").trim();if(!url)return;if(!/^https?:/.test(url))url="https://"+url;
-    let title=(fd.get("title")||"").trim()||url.replace(/^https?:\/\//,"").slice(0,60);let fi;
+  bg.querySelector("#addForm").addEventListener("submit",async e=>{e.preventDefault();const fd=new FormData(e.target);let url=(fd.get("url")||"").trim();if(!url)return;if(!/^https?:/.test(url))url="https://"+url;
+    toast("正在获取信息…");
+    let title=(fd.get("title")||"").trim();
+    let cover=(fd.get("cover")||"").trim();
+    /* B站：自动取封面与标题 */
+    const bm=url.match(/bilibili\.com\/video\/(BV[\w]+)/i);
+    if(bm&&(!cover||!title)){
+      const info=await biliInfo(bm[1]);
+      if(info){ if(!cover)cover=info.cover; if(!title)title=info.title; }
+    }
+    if(!title)title=url.replace(/^https?:\/\//,"").slice(0,60);
+    let fi;
     if(sel.value==="__new__"){const nm=(fd.get("newFolder")||"新收藏夹").trim()||"新收藏夹";DATA.fav.push({name:nm,items:[]});fi=DATA.fav.length-1;}else fi=+sel.value;
-    (DATA.fav[fi].items=DATA.fav[fi].items||[]).push({title,url});state.favFolder=fi;state.favItem=null;saveDraft();bg.remove();renderFav();toast("已收藏");});
+    (DATA.fav[fi].items=DATA.fav[fi].items||[]).push(cover?{title,url,cover}:{title,url});state.favFolder=fi;state.favItem=null;saveDraft();bg.remove();renderFav();toast("已收藏");});
 }
 function openMove(id){
   const loc=locate(id);if(!loc)return;
@@ -1220,6 +1263,7 @@ function render(){
   moveHLine();
 
   if(state.view==="feed")renderFeed();else if(state.view==="kb")renderKB();else renderFav();
+  syncToolbarH();
 }
 async function boot(){
   await loadData();
