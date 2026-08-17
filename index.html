@@ -51,7 +51,7 @@
     width:1px;background:var(--line);opacity:.6;pointer-events:none;z-index:1}
   @media(max-width:1080px){body::after{display:none}}
   /* 横分割线：固定在视口，距底部 1/5；青色段会滑到当前板块下方 */
-  .hline{position:fixed;left:0;right:0;bottom:20vh;height:1px;z-index:1;pointer-events:none;
+  .hline{position:fixed;left:0;right:0;bottom:16.6667vh;height:1px;z-index:1;pointer-events:none;
     background:color-mix(in srgb,var(--line) 60%,transparent)}
   .hline-mark{position:absolute;top:-1px;left:0;height:3px;width:280px;background:var(--accent);
     transform:translateX(22px);will-change:transform}
@@ -361,16 +361,17 @@
     body{padding-right:20vw;overflow:hidden}          /* 整页不滚动 */
     .site-foot{display:none}
     /* 内容区上到顶栏、下到横分割线，内部滚动 */
-    main{position:fixed;top:62px;left:0;right:20vw;bottom:20vh;
+    main{position:fixed;top:62px;left:0;right:20vw;bottom:16.6667vh;
       max-width:none;margin:0;padding:26px 22px 20px;overflow-y:auto;overflow-x:hidden}
     main::-webkit-scrollbar{width:0;height:0}
     main{scrollbar-width:none}
-    .kb-tree,.kb-notes,.fav-side{top:0;max-height:calc(80vh - 108px)}
+    .kb-tree,.kb-notes,.fav-side{top:0;max-height:calc(83.3333vh - 108px)}
     /* 知识库整体右移，使 DIRECTORY 左边缘与顶栏“秋”字对齐
        1196 = 顶栏内容宽 1240 减去 main 左右各 22 的内边距 */
     .kb,.fav{max-width:1196px;margin:0 auto}
     /* 右栏：内容用滚轮上下滑动（不裁剪，照片仍可拖出） */
-    .rail{top:62px;height:calc(80vh - 62px);overflow:visible}
+    .rail{top:62px;height:calc(83.3333vh - 62px);overflow:visible;
+      clip-path:inset(0 -60vw 0 -60vw)}   /* 上下按框裁剪，左右放行以便拖动照片 */
     .rail-scroll{display:flex;flex-direction:column;gap:14px;
       transition:transform .12s ease-out;will-change:transform}
     /* 动态：把正文推回整个页面的水平中心（内容区中心比页面中心左偏 10vw） */
