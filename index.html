@@ -971,7 +971,7 @@ const dkey=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+Str
 async function fetchContrib(force){
   const cfg=ghCfg(),KEY="myspace-contrib";
   if(!force){try{const c=JSON.parse(localStorage.getItem(KEY));
-    if(c&&c.owner===cfg.owner&&c.repo===cfg.repo&&Date.now()-c.t<6*3600e3)return c.days;}catch(e){}}
+    if(c&&c.owner===cfg.owner&&c.repo===cfg.repo&&Date.now()-c.t<10*60e3)return c.days;}catch(e){}}
   const t0=new Date();const since=new Date(t0.getFullYear(),t0.getMonth()-11,1).toISOString();
   const days={};
   for(let page=1;page<=3;page++){
@@ -1019,9 +1019,19 @@ function railContribHTML(){
     +'<div id="cgBox"><div class="rail-note">载入中…</div></div></div>';
 }
 async function hydrateContrib(){
-  const box=$("#cgBox");if(!box)return;
-  try{const days=await fetchContrib(false);if($("#cgBox"))$("#cgBox").innerHTML=contribGridHTML(days);}
-  catch(e){if($("#cgBox"))$("#cgBox").innerHTML='<div class="rail-note">暂时取不到修改记录<br>（需要能访问 GitHub 的网络）</div>';}
+  if(!$("#cgBox"))return;
+  /* 1) 先用本地缓存立刻渲染，避免空白 */
+  let cached=null;
+  try{const cfg=ghCfg(),c=JSON.parse(localStorage.getItem("myspace-contrib"));
+    if(c&&c.owner===cfg.owner&&c.repo===cfg.repo)cached=c.days;}catch(e){}
+  if(cached&&$("#cgBox"))$("#cgBox").innerHTML=contribGridHTML(cached);
+  /* 2) 再拉最新数据覆盖（10 分钟内直接复用缓存，避免触发接口限流） */
+  try{
+    const days=await fetchContrib(false);
+    if($("#cgBox"))$("#cgBox").innerHTML=contribGridHTML(days);
+  }catch(e){
+    if(!cached&&$("#cgBox"))$("#cgBox").innerHTML='<div class="rail-note">暂时取不到修改记录<br>（需要能访问 GitHub 的网络）</div>';
+  }
 }
 
 /* ---------- 联系方式 ---------- */
