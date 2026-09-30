@@ -6,6 +6,11 @@
   },
   "feed": [
     {
+      "id": "ns72kmlx35",
+      "date": "2026-09-30 23:37",
+      "text": "LightPaws的设计要很快的落地...本身没有设计技能点，做这种事还是有点力不从心了...\n现在的目标是做独立站，国内大概是在微信做小程序...app这些，做宠物清洁的品牌，要做的事情还有很多"
+    },
+    {
       "id": "n2yar6vukc",
       "date": "2026-09-26 19:12",
       "text": "去了上海，杭州，成都，新西兰。9月份马不停蹄的在跑。生病了，感觉很累，也很疲惫。或许需要一个契机，和一个明确的方向。总感觉存在一个悖论。到底成功是一个明确的目标+坚定不移的努力达成的，还是在不断发展中，调整和纠错后达成的。每个成功的人都有不同的说法，而我的路径会是怎样的？"
@@ -85,6 +90,26 @@
           "title": "Pi 大道至简，超越Codex和Claude Code的极简Agent，保姆级全攻略， 一期视频精通",
           "url": "https://www.bilibili.com/video/BV139bD6gEa8/",
           "cover": "https://i0.hdslb.com/bfs/archive/0c723b49f9257609dec1809758396473c36962b9.jpg"
+        }
+      ]
+    },
+    {
+      "name": "经济",
+      "items": [
+        {
+          "title": "从奢侈品牌表现看中国阶层财富，受房价下跌拖累，消费降级；高净值人群奢侈品及旅游度假消费增长强劲。爱马仕、香奈儿、梵克雅宝销售表现优于古驰、博柏利",
+          "url": "https://www.bilibili.com/video/BV1oGG66zEms/",
+          "cover": "https://i0.hdslb.com/bfs/archive/bc16af6b8c0497a91daf28e6b83fde111e57340c.jpg"
+        }
+      ]
+    },
+    {
+      "name": "设计",
+      "items": [
+        {
+          "title": "【建议收藏】提升审美与效率！设计师必逛的灵感网站",
+          "url": "https://www.bilibili.com/video/BV1wZYY6EErY",
+          "cover": "https://i1.hdslb.com/bfs/archive/f954c4291ed4d91663f2583ae981cf8c9950be30.jpg"
         }
       ]
     }
