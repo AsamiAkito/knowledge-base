@@ -431,7 +431,7 @@
     .kb,.fav{max-width:1196px;margin:0 auto}
     /* 右栏：内容用滚轮上下滑动（不裁剪，照片仍可拖出） */
     .rail{top:62px;height:calc(83.3333vh - 62px);overflow:visible;
-      clip-path:inset(0 -60vw 0 -60vw)}   /* 上下按框裁剪，左右放行以便拖动照片 */
+      clip-path:inset(0 -100vw 0 -100vw)}   /* 上下按框裁剪，左右放行到整屏以便拖动照片 */
     .rail-scroll{display:flex;flex-direction:column;gap:14px;
       transition:transform .12s ease-out;will-change:transform}
     /* 动态：把正文推回整个页面的水平中心（内容区中心比页面中心左偏 10vw） */
@@ -445,10 +445,15 @@
   .photowall{display:flex;flex-direction:column;align-items:center;gap:14px}
   .photo{position:relative;width:100%;cursor:grab;touch-action:none;
     transform-origin:center center;will-change:transform}
+  .photo{user-select:none;-webkit-user-select:none;-webkit-user-drag:none}
   .photo:active{cursor:grabbing}
   .photo.dragging{z-index:60}
   .photo img{width:100%;height:auto;display:block;
-    user-select:none;-webkit-user-drag:none;pointer-events:none}
+    user-select:none;-webkit-user-drag:none;pointer-events:none;
+    transition:transform .2s cubic-bezier(.2,.8,.3,1.2),box-shadow .2s ease}
+  .photo:hover img{transform:scale(.985);box-shadow:0 6px 16px rgba(0,0,0,.18)}
+  .photo.grabbing img{transform:scale(.95) rotate(-.6deg);box-shadow:0 18px 38px rgba(0,0,0,.32),0 4px 10px rgba(0,0,0,.18)}
+  .photo.grabbing{cursor:grabbing}
   .photo .pdel{position:absolute;left:4px;top:4px;z-index:2;opacity:0;transition:opacity .18s}
   .photo:hover .pdel{opacity:1}
   .rail-bare{background:none;border:0;padding:0}
@@ -1340,19 +1345,29 @@ async function uploadPendingPhotos(cfg,headers){
   document.addEventListener("pointerdown",e=>{
     const el=e.target.closest(".photo");if(!el)return;
     if(e.target.closest("[data-action]"))return;      /* 删除按钮不触发拖动 */
+    if(e.button!==0)return;
+    e.preventDefault();                                /* 不选中文字、不触发浏览器原生拖拽 */
     const v=pv(el.dataset.pid);
     drag={el:el,id:el.dataset.pid,sx:e.clientX,sy:e.clientY,ox:v.x,oy:v.y,moved:0};
-    el.classList.add("dragging");
-    el.setPointerCapture&&el.setPointerCapture(e.pointerId);
+    el.classList.add("dragging","grabbing");
+    try{el.setPointerCapture(e.pointerId);}catch(_){}
   });
+  /* 拖动被中断（原生拖拽、切窗口等）时直接放下，避免照片粘在鼠标上 */
+  function dropPhoto(){if(!drag)return;const d=drag;drag=null;d.el.classList.remove("grabbing");if(d.moved<=4)d.el.classList.remove("dragging");}
+  document.addEventListener("pointercancel",dropPhoto);
+  document.addEventListener("lostpointercapture",e=>{if(drag&&e.target===drag.el)setTimeout(dropPhoto,0);});
+  window.addEventListener("blur",dropPhoto);
+  document.addEventListener("dragstart",e=>{if(e.target.closest&&e.target.closest(".photo"))e.preventDefault();});
   document.addEventListener("pointermove",e=>{
     if(!drag)return;
+    if(e.pointerType==="mouse"&&!(e.buttons&1)){dropPhoto();return;}   /* 已经松开了键 */
     const dx=e.clientX-drag.sx,dy=e.clientY-drag.sy;
     drag.moved=Math.max(drag.moved,Math.abs(dx)+Math.abs(dy));
     const v=pv(drag.id);v.x=drag.ox+dx;v.y=drag.oy+dy;applyPV(drag.el);
   });
   document.addEventListener("pointerup",e=>{
     if(!drag)return;const d=drag;drag=null;
+    d.el.classList.remove("grabbing");
     if(d.moved<=4)d.el.classList.remove("dragging");
     if(d.moved>4)return;                               /* 拖动过就不算点击 */
     clearTimeout(clickTimer);
