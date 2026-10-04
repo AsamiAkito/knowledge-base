@@ -160,6 +160,12 @@
   .imgs .ph{aspect-ratio:1;border-radius:var(--r);background:var(--bg-soft);border:1px solid var(--line);
     display:flex;align-items:center;justify-content:center;font-size:26px;color:var(--text-dim);overflow:hidden}
   .imgs .ph img{width:100%;height:100%;object-fit:cover}
+  .imgbuf{display:flex;flex-wrap:wrap;gap:8px;margin-top:11px}
+  .imgbuf .ib{position:relative;width:72px;height:72px;border-radius:var(--r);border:1px solid var(--line);background:var(--bg-soft);
+    display:flex;align-items:center;justify-content:center;font-size:22px;overflow:hidden}
+  .imgbuf .ib img{width:100%;height:100%;object-fit:cover}
+  .imgbuf .ib button{position:absolute;top:2px;right:2px;width:20px;height:20px;border:0;border-radius:50%;
+    background:rgba(0,0,0,.55);color:#fff;font-size:13px;line-height:20px;padding:0;cursor:pointer}
 
   .actions{display:flex;gap:20px;margin-top:16px;padding-top:13px;border-top:1px solid var(--line-s);align-items:center}
   .act{display:inline-flex;align-items:center;gap:7px;color:var(--text-dim);cursor:pointer;font-size:12.5px;
@@ -496,6 +502,7 @@
 </footer>
 <input type="file" id="importInput" accept=".md,.markdown,.txt,text/plain" multiple style="display:none">
 <input type="file" id="photoInput" accept="image/*" multiple style="display:none">
+<input type="file" id="postImgInput" accept="image/*" multiple style="display:none">
 <div id="toast"></div>
 
 
@@ -545,7 +552,7 @@ function applyTheme(t){document.documentElement.setAttribute("data-theme",t);$("
 let ownerUnlocked=false;
 (function(){try{if(location.hash.replace("#","").toLowerCase()==="edit"){localStorage.setItem(KEY_OWNER,"1");history.replaceState(null,"",location.pathname+location.search);}ownerUnlocked=localStorage.getItem(KEY_OWNER)==="1";}catch(e){}})();
 
-let state={view:"feed",feedOpen:null,kbSel:null,favFolder:0,favItem:null,expanded:new Set(),editMode:false,editingPost:null,editingFile:false,composerText:"",moving:null,fileBuf:null};
+let state={view:"feed",feedOpen:null,kbSel:null,favFolder:0,favItem:null,expanded:new Set(),editMode:false,editingPost:null,editingFile:false,composerText:"",composerImgText:"",imgBuf:[],composerImgs:[],imgTarget:"c",moving:null,fileBuf:null};
 
 let _hl=0;
 function md(src){
@@ -640,14 +647,18 @@ function avatarHTML(a){const prof=DATA.profile||{};a=(a===undefined?prof.avatar:
   return esc(a||((prof.name||"我").trim()[0]));}
 function feedComments(id){return (store.cmts[id]||[]).slice();}
 function likeCount(id){return store.likes[id]?1:0;}
+/* 动态配图：网址/仓库路径/待上传(data:) 都按图片渲染，其余当 emoji/文字 */
+function isImgSrc(x){return /^(https?:|data:image\/)/.test(x)||/\.(png|jpe?g|gif|webp|avif|svg)(\?.*)?$/i.test(x);}
+function imgBufHTML(k){const arr=k==="c"?state.composerImgs:state.imgBuf;return '<div class="imgbuf">'+arr.map((x,i)=>'<div class="ib">'+(isImgSrc(x)?'<img src="'+esc(x)+'" alt="">':emojify(esc(x)))+'<button data-action="imgbuf-del" data-k="'+k+'" data-i="'+i+'" title="移除">×</button></div>').join("")+'</div>';}
+function readImgInput(id){const el=$("#"+id);return el?el.value.split(/[,，]/).map(s=>s.trim()).filter(Boolean):[];}
 function postHTML(p,full){
   const liked=store.likes[p.id];const cs=feedComments(p.id);const imgs=(p.images||[]);const em=state.editMode;
   if(state.editingPost===p.id){
     return '<div class="post inline-editor"><textarea id="pe-'+p.id+'">'+esc(p.text)+'</textarea>'
-      +'<div class="row2"><input id="pi-'+p.id+'" placeholder="图片(emoji 或图片URL，逗号分隔，可留空)" value="'+esc((imgs||[]).join(","))+'"></div>'
+      +imgBufHTML("e")+'<div class="row2"><input id="pi-'+p.id+'" placeholder="追加 emoji 或图片URL，逗号分隔（可留空）"><button class="btn sm soft" data-action="post-img-add" data-k="e">＋ 上传图片</button></div>'
       +'<div class="edit-actions" style="margin-top:10px;justify-content:flex-end"><button class="btn sm" data-action="post-save" data-id="'+p.id+'">保存</button><button class="mini" data-action="post-cancel">取消</button></div></div>';
   }
-  const imgHTML=imgs.length?'<div class="imgs '+(imgs.length===1?'one':imgs.length===2?'two':'')+'">'+imgs.map(x=>'<div class="ph">'+(/^https?:/.test(x)?'<img src="'+esc(x)+'" alt="">':emojify(esc(x)))+'</div>').join("")+'</div>':"";
+  const imgHTML=imgs.length?'<div class="imgs '+(imgs.length===1?'one':imgs.length===2?'two':'')+'">'+imgs.map(x=>'<div class="ph">'+(isImgSrc(x)?'<img src="'+esc(x)+'" alt="">':emojify(esc(x)))+'</div>').join("")+'</div>':"";
   const body='<div class="body '+(full?'':'clamp')+'" data-action="feed-open" data-id="'+p.id+'">'+md(p.text)+'</div>';
   const like='<button class="act '+(liked?'liked':'')+'" data-action="feed-like" data-id="'+p.id+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg><span>'+(likeCount(p.id)||'赞')+'</span></button>';
   const cmt='<button class="act" data-action="feed-open" data-id="'+p.id+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>'+(cs.length||'评论')+'</span></button>';
@@ -673,7 +684,7 @@ function renderFeed(){
     applyAllPV();return;
   }
   const composer=state.editMode?'<div class="composer"><textarea id="composerText" placeholder="有什么新鲜事？支持 Markdown…">'+esc(state.composerText||"")+'</textarea>'
-    +'<div class="row2"><input id="composerImg" placeholder="图片(emoji 或图片URL，逗号分隔，可留空)"><div class="spacer" style="flex:1"></div><button class="btn" data-action="post-new">发布动态</button></div></div>':'';
+    +(state.composerImgs.length?imgBufHTML("c"):'')+'<div class="row2"><input id="composerImg" placeholder="emoji 或图片URL，逗号分隔（可留空）" value="'+esc(state.composerImgText||"")+'"><button class="btn soft" data-action="post-img-add" data-k="c">＋ 上传图片</button><div class="spacer" style="flex:1"></div><button class="btn" data-action="post-new">发布动态</button></div></div>':'';
   const list=DATA.feed.filter(p=>state.editMode||!p.hidden);
   app.innerHTML='<div class="with-rail feed-layout"><div><div class="feed"><div class="feed-h"><h1>动态</h1><p>DAILY LOG //</p></div>'+composer
     +(list.length?list.map(p=>postHTML(p,false)).join(""):'<div class="empty">还没有动态'+(state.editMode?'，在上面写第一条吧。':'。')+'</div>')+'</div></div><aside class="rail"><div class="rail-scroll">'+railPhotosHTML()+'</div></aside></div>';
@@ -787,7 +798,7 @@ function renderFav(){
   app.innerHTML='<div class="fav"><aside class="panel fav-side">'+sideHTML()+'</aside><section>'+head+grid+'</section><aside class="rail"><div class="rail-scroll">'+railContactsHTML()+'</div></aside></div>';
 }
 
-function captureComposer(){const t=$("#composerText");if(t)state.composerText=t.value;}
+function captureComposer(){const t=$("#composerText");if(t)state.composerText=t.value;const g=$("#composerImg");if(g)state.composerImgText=g.value;}
 function captureFileBuf(){if(!state.fileBuf)return;const nm=$("#fe-name"),tg=$("#fe-tags"),bd=$("#fe-body");if(nm)state.fileBuf.name=nm.value;if(tg)state.fileBuf.tags=tg.value.split(/[,，]/).map(s=>s.trim()).filter(Boolean);if(bd)state.fileBuf.body=bd.value;document.querySelectorAll("[data-note]").forEach(el=>{const i=+el.dataset.note;if(state.fileBuf.notes[i])state.fileBuf.notes[i].text=el.value;});}
 
 function toB64(str){const bytes=new TextEncoder().encode(str);let bin="";const ch=0x8000;for(let i=0;i<bytes.length;i+=ch)bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+ch));return btoa(bin);}
@@ -892,10 +903,12 @@ document.addEventListener("click",e=>{
 
     case "feed-like":{store.likes[id]=!store.likes[id];saveStore();el.classList.toggle("liked",store.likes[id]);el.querySelector("span").textContent=likeCount(id)||"赞";if(store.likes[id]){el.classList.add("pop");setTimeout(()=>el.classList.remove("pop"),300);}return;}
     case "feed-open":if(state.editMode&&state.editingPost)return;state.feedOpen=id;render();window.scrollTo(0,0);return;
-    case "post-new":{const t=$("#composerText").value.trim();if(!t){toast("写点什么再发");return;}const imgs=$("#composerImg").value.split(/[,，]/).map(s=>s.trim()).filter(Boolean);DATA.feed.unshift({id:uid(),date:now(),text:t,images:imgs.length?imgs:undefined});state.composerText="";saveDraft();renderFeed();toast("已发布到本地，记得点上方“发布”同步线上");return;}
-    case "post-edit":state.editingPost=id;renderFeed();return;
-    case "post-cancel":state.editingPost=null;renderFeed();return;
-    case "post-save":{const p=DATA.feed.find(x=>x.id===id);if(p){p.text=$("#pe-"+id).value;const imgs=$("#pi-"+id).value.split(/[,，]/).map(s=>s.trim()).filter(Boolean);p.images=imgs.length?imgs:undefined;}state.editingPost=null;saveDraft();renderFeed();return;}
+    case "post-new":{const t=$("#composerText").value.trim();if(!t){toast("写点什么再发");return;}const imgs=state.composerImgs.concat(readImgInput("composerImg"));DATA.feed.unshift({id:uid(),date:now(),text:t,images:imgs.length?imgs:undefined});state.composerText="";state.composerImgText="";state.composerImgs=[];saveDraft();renderFeed();toast("已发布到本地，记得点上方“发布”同步线上");return;}
+    case "post-edit":{captureComposer();const p=DATA.feed.find(x=>x.id===id);state.editingPost=id;state.imgBuf=(p&&p.images||[]).slice();renderFeed();return;}
+    case "post-img-add":state.imgTarget=el.dataset.k;$("#postImgInput").click();return;
+    case "imgbuf-del":{captureImgEdit();(el.dataset.k==="c"?state.composerImgs:state.imgBuf).splice(+el.dataset.i,1);renderFeed();return;}
+    case "post-cancel":state.editingPost=null;state.imgBuf=[];renderFeed();return;
+    case "post-save":{const p=DATA.feed.find(x=>x.id===id);if(p){p.text=$("#pe-"+id).value;const imgs=state.imgBuf.concat(readImgInput("pi-"+id));p.images=imgs.length?imgs:undefined;}state.editingPost=null;state.imgBuf=[];saveDraft();renderFeed();return;}
     case "post-hide":{const p=DATA.feed.find(x=>x.id===id);if(p)p.hidden=!p.hidden;saveDraft();renderFeed();return;}
     case "post-delete":{if(confirm("删除这条动态？")){DATA.feed=DATA.feed.filter(x=>x.id!==id);saveDraft();state.feedOpen=null;renderFeed();}return;}
 
@@ -935,6 +948,18 @@ document.addEventListener("submit",e=>{
   const f=e.target.closest('[data-action="feed-comment"]');if(!f)return;e.preventDefault();
   const id=f.dataset.id,inp=f.querySelector("input"),text=(inp.value||"").trim();if(!text)return;
   (store.cmts[id]=store.cmts[id]||[]).push({name:"访客",text,when:"刚刚"});saveStore();renderFeed();
+});
+
+/* 选图前后保住正在编辑的文字，避免重渲染丢失 */
+function captureImgEdit(){captureComposer();const id=state.editingPost;if(!id)return;const p=DATA.feed.find(x=>x.id===id),t=$("#pe-"+id);if(p&&t)p.text=t.value;}
+$("#postImgInput").addEventListener("change",async e=>{
+  const files=[...e.target.files];e.target.value="";if(!files.length)return;
+  captureImgEdit();toast("处理图片中…");
+  for(const f of files){
+    if(!/^image\//.test(f.type))continue;
+    try{(state.imgTarget==="c"?state.composerImgs:state.imgBuf).push(await downscale(f,1600,.85));}catch(err){toast("跳过一张："+err.message);}
+  }
+  renderFeed();toast("已添加，点“发布到线上”时会自动上传到 GitHub");
 });
 
 $("#photoInput").addEventListener("change",async e=>{
@@ -1159,6 +1184,17 @@ async function uploadPendingPhotos(cfg,headers){
     const put=await fetch(url,{method:"PUT",headers:Object.assign({"Content-Type":"application/json"},headers),body:JSON.stringify(body)});
     if(!put.ok){const e=await put.json().catch(()=>({}));throw new Error("照片上传失败："+(e.message||put.status));}
     p.src=path;
+  }
+  /* 动态配图 */
+  const jobs=[];(DATA.feed||[]).forEach(post=>(post.images||[]).forEach((x,i)=>{if(/^data:image\//.test(x))jobs.push([post,i]);}));
+  for(let k=0;k<jobs.length;k++){
+    const [post,i]=jobs[k];toast("上传配图 "+(k+1)+"/"+jobs.length+"…");
+    const m=post.images[i].match(/^data:(image\/[\w+]+);base64,([\s\S]+)$/);if(!m)continue;
+    const path="assets/photos/"+uid()+".jpg";
+    const url="https://api.github.com/repos/"+cfg.owner+"/"+cfg.repo+"/contents/"+path;
+    const put=await fetch(url,{method:"PUT",headers:Object.assign({"Content-Type":"application/json"},headers),body:JSON.stringify({message:"上传配图 "+path,content:m[2],branch:cfg.branch})});
+    if(!put.ok){const e=await put.json().catch(()=>({}));throw new Error("配图上传失败："+(e.message||put.status));}
+    post.images[i]=path;saveDraft();
   }
 }
 
