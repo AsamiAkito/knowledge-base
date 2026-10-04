@@ -201,7 +201,8 @@
   .pv-ctitle{font-size:13px;color:var(--text-dim);margin:16px 0 14px}
   .pv-foot{border-top:1px solid var(--line-s);padding:12px 18px;display:flex;align-items:center;gap:14px}
   .pv-foot .cmt-form{flex:1;margin:0}
-  .pv-foot .cmt-form input{border-radius:999px}
+  .pv-foot .cmt-form input{border-radius:999px;min-width:0}
+  .pv-foot .cmt-form input.nick{flex:0 0 76px;width:76px}
   .pv-close{position:fixed;top:18px;right:20px;width:40px;height:40px;border-radius:50%;border:0;cursor:pointer;
     background:rgba(255,255,255,.14);color:#fff;font-size:22px;line-height:40px;padding:0;z-index:2}
   .pv-close:hover{background:rgba(255,255,255,.26)}
@@ -231,6 +232,15 @@
   .cmt .c-name span{font-family:var(--mono);font-weight:400;color:var(--text-dim);margin-left:8px;font-size:11px;letter-spacing:.06em}
   .cmt .c-text{font-size:14px;margin-top:2px;word-wrap:break-word}
   .cmt-form{display:flex;gap:9px;margin-top:8px}
+  .cmt-form input.nick{flex:0 0 96px;width:96px}
+  .cmt .c-row{display:flex;align-items:flex-start;gap:10px}
+  .cmt .c-row .c-text{flex:1;min-width:0}
+  .c-like{display:inline-flex;align-items:center;gap:4px;flex:none;border:0;background:transparent;cursor:pointer;padding:2px 0;
+    color:var(--text-dim);font-family:var(--mono);font-size:11.5px;transition:color .18s}
+  .c-like svg{width:14px;height:14px}.c-like:hover{color:var(--text)}
+  .c-like.liked{color:var(--like)}.c-like.liked svg{fill:var(--like);stroke:var(--like)}
+  .c-del{margin-left:8px;border:0;background:transparent;cursor:pointer;padding:0;color:var(--danger);
+    font-family:var(--sans);font-size:11.5px;font-weight:400;opacity:.8}.c-del:hover{opacity:1;text-decoration:underline}
   .cmt-form input{flex:1;border:1px solid var(--line);background:var(--bg-soft);border-radius:var(--r);
     padding:9px 13px;font-size:14px;color:var(--text);outline:0}
   .cmt-form input:focus{border-color:var(--accent)}
@@ -592,7 +602,9 @@ function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show"
 const KEY_CACHE="myspace-cache";
 const KEY_STORE="myspace-store",KEY_DRAFT="myspace-draft",KEY_GH="myspace-gh",KEY_OWNER="myspace-owner",KEY_THEME="ms-theme";
 let store=(()=>{try{return JSON.parse(localStorage.getItem(KEY_STORE))||{}}catch(e){return{}}})();
-store.likes=store.likes||{};store.cmts=store.cmts||{};
+store.likes=store.likes||{};store.cmts=store.cmts||{};store.cmtLikes=store.cmtLikes||{};
+/* 旧评论补上 id，便于点赞和删除 */
+Object.keys(store.cmts).forEach(k=>(store.cmts[k]||[]).forEach(c=>{if(!c.id)c.id=uid();}));
 function saveStore(){try{localStorage.setItem(KEY_STORE,JSON.stringify(store))}catch(e){}}
 
 let DATA={feed:[],kb:[],fav:[]};
@@ -701,6 +713,19 @@ function avatarHTML(a){const prof=DATA.profile||{};a=(a===undefined?prof.avatar:
   if(isImg(a))return '<img src="'+esc(a)+'" alt="">';
   return esc(a||((prof.name||"我").trim()[0]));}
 function feedComments(id){return (store.cmts[id]||[]).slice();}
+/* 头像：昵称第一个字（英文取首字母大写） */
+function nickInitial(n){const ch=Array.from(String(n||"访客").trim()||"访")[0];return /[a-z]/i.test(ch)?ch.toUpperCase():ch;}
+const HEART='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>';
+function cmtHTML(c,pid){
+  const name=c.name||"访客",liked=!!store.cmtLikes[c.id],n=(c.likes||0)+(liked?1:0);
+  const del=state.editMode?'<button class="c-del" data-action="cmt-del" data-id="'+pid+'" data-cid="'+c.id+'">删除</button>':'';
+  return '<div class="cmt"><div class="avatar">'+esc(nickInitial(name))+'</div><div class="c-main"><div class="c-name">'+esc(name)+'<span>'+esc(c.when||'')+'</span>'+del+'</div>'
+    +'<div class="c-row"><div class="c-text">'+esc(c.text)+'</div><button class="c-like'+(liked?' liked':'')+'" data-action="cmt-like" data-id="'+pid+'" data-cid="'+c.id+'" title="赞">'+HEART+'<span>'+(n||'')+'</span></button></div></div></div>';
+}
+function cmtFormHTML(pid,ph,btn){
+  return '<form class="cmt-form" data-action="feed-comment" data-id="'+pid+'"><input class="nick" name="nick" placeholder="你的名字" autocomplete="nickname" maxlength="20" value="'+esc(store.nick||"")+'"/>'
+    +'<input name="text" placeholder="'+ph+'" autocomplete="off" maxlength="300"/>'+(btn?'<button class="btn" type="submit">发送</button>':'')+'</form>';
+}
 function likeCount(id){return store.likes[id]?1:0;}
 /* 动态配图：网址/仓库路径/待上传(data:) 都按图片渲染，其余当 emoji/文字 */
 function isImgSrc(x){return /^(https?:|data:image\/)/.test(x)||/\.(png|jpe?g|gif|webp|avif|svg)(\?.*)?$/i.test(x);}
@@ -754,11 +779,11 @@ function pvMedia(){
 function pvSide(){
   const p=pvPost(),box=$("#pv .pv-side");if(!p||!box)return;
   const prof=DATA.profile||{name:"我",avatar:""},cs=feedComments(p.id),liked=store.likes[p.id];
-  const clist=cs.map(c=>'<div class="cmt"><div class="avatar">'+esc((c.name||'我')[0])+'</div><div class="c-main"><div class="c-name">'+esc(c.name||'我')+'<span>'+esc(c.when||'')+'</span></div><div class="c-text">'+esc(c.text)+'</div></div></div>').join("");
+  const clist=cs.map(c=>cmtHTML(c,p.id)).join("");
   box.innerHTML='<div class="pv-head"><div class="avatar">'+avatarHTML(prof.avatar)+'</div><div class="who">'+esc(prof.name||"我")+'</div></div>'
     +'<div class="pv-scroll"><div class="pv-text">'+md(p.text)+'</div><div class="pv-date">'+esc(p.date)+'</div>'
     +'<div class="pv-ctitle">'+(cs.length?'共 '+cs.length+' 条评论':'还没有评论，来说点什么吧')+'</div>'+clist+'</div>'
-    +'<div class="pv-foot"><form class="cmt-form" data-action="feed-comment" data-id="'+p.id+'"><input name="text" placeholder="说点什么…" autocomplete="off" maxlength="300"/></form>'
+    +'<div class="pv-foot">'+cmtFormHTML(p.id,"说点什么…",false)+''
     +'<button class="act '+(liked?'liked':'')+'" data-action="pv-like"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg><span>'+(likeCount(p.id)||'赞')+'</span></button>'
     +'<span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>'+(cs.length||'评论')+'</span></span></div>';
 }
@@ -780,9 +805,9 @@ function postHTML(p,full){
       +'<button class="mini danger" data-action="post-delete" data-id="'+p.id+'">删除</button></div>':'';
   let comments="";
   if(full){
-    const clist=cs.map(c=>'<div class="cmt"><div class="avatar">'+esc((c.name||'我')[0])+'</div><div class="c-main"><div class="c-name">'+esc(c.name||'我')+'<span>'+esc(c.when||'')+'</span></div><div class="c-text">'+esc(c.text)+'</div></div></div>').join("");
+    const clist=cs.map(c=>cmtHTML(c,p.id)).join("");
     comments='<div class="comments">'+(clist||'<div style="color:var(--text-dim);font-size:13px;margin-bottom:12px">还没有评论</div>')
-      +'<form class="cmt-form" data-action="feed-comment" data-id="'+p.id+'"><input name="text" placeholder="写下你的评论…" autocomplete="off" maxlength="300"/><button class="btn" type="submit">发送</button></form></div>';
+      +cmtFormHTML(p.id,"写下你的评论…",true)+'</div>';
   }
   const prof=DATA.profile||{name:"我",avatar:""};
   return '<div class="post'+(p.hidden?' hidden-item':'')+'"><div class="top"><div class="avatar">'+avatarHTML(prof.avatar)+'</div><div><div class="who">'+esc(prof.name||"我")+'</div><div class="when">'+esc(p.date)+'</div></div></div>'
@@ -1017,6 +1042,10 @@ document.addEventListener("click",e=>{
     case "feed-open":if(state.editMode&&state.editingPost)return;state.feedOpen=id;render();window.scrollTo(0,0);return;
     case "post-new":{const t=$("#composerText").value.trim();if(!t){toast("写点什么再发");return;}const imgs=state.composerImgs.concat(readImgInput("composerImg"));DATA.feed.unshift({id:uid(),date:now(),text:t,images:imgs.length?imgs:undefined});state.composerText="";state.composerImgText="";state.composerImgs=[];saveDraft();renderFeed();toast("已发布到本地，记得点上方“发布”同步线上");return;}
     case "post-edit":{captureComposer();const p=DATA.feed.find(x=>x.id===id);state.editingPost=id;state.imgBuf=(p&&p.images||[]).slice();renderFeed();return;}
+    case "cmt-like":{const cid=el.dataset.cid;store.cmtLikes[cid]=!store.cmtLikes[cid];saveStore();
+      const c=(store.cmts[id]||[]).find(x=>x.id===cid);const n=((c&&c.likes)||0)+(store.cmtLikes[cid]?1:0);
+      document.querySelectorAll('.c-like[data-cid="'+cid+'"]').forEach(b=>{b.classList.toggle("liked",!!store.cmtLikes[cid]);b.querySelector("span").textContent=n||"";if(store.cmtLikes[cid]){b.classList.add("pop");setTimeout(()=>b.classList.remove("pop"),300);}});return;}
+    case "cmt-del":{if(!confirm("删除这条评论？"))return;const cid=el.dataset.cid;store.cmts[id]=(store.cmts[id]||[]).filter(x=>x.id!==cid);delete store.cmtLikes[cid];saveStore();renderFeed();if(state.pv)pvSide();return;}
     case "imgs-more":{if(state.imgsOpen.has(id))state.imgsOpen.delete(id);else state.imgsOpen.add(id);renderFeed();return;}
     case "pv-open":openViewer(id,el.dataset.i);return;
     case "pv-close":closeViewer();return;
@@ -1064,9 +1093,11 @@ document.addEventListener("click",e=>{
 
 document.addEventListener("submit",e=>{
   const f=e.target.closest('[data-action="feed-comment"]');if(!f)return;e.preventDefault();
-  const id=f.dataset.id,inp=f.querySelector("input"),text=(inp.value||"").trim();if(!text)return;
-  (store.cmts[id]=store.cmts[id]||[]).push({name:"访客",text,when:"刚刚"});saveStore();renderFeed();
-  if(state.pv){pvSide();const sc=$("#pv .pv-scroll");if(sc)sc.scrollTop=sc.scrollHeight;const ip=$("#pv .cmt-form input");if(ip)ip.focus();}
+  const id=f.dataset.id,inp=f.querySelector('input[name="text"]'),text=(inp.value||"").trim();if(!text)return;
+  const nk=f.querySelector('input[name="nick"]'),nick=(nk&&nk.value||"").trim().slice(0,20);
+  store.nick=nick;                                   /* 记住昵称，下次自动填好 */
+  (store.cmts[id]=store.cmts[id]||[]).push({id:uid(),name:nick||"访客",text,when:now()});saveStore();renderFeed();
+  if(state.pv){pvSide();const sc=$("#pv .pv-scroll");if(sc)sc.scrollTop=sc.scrollHeight;const ip=$('#pv .cmt-form input[name="text"]');if(ip)ip.focus();}
 });
 
 /* 选图前后保住正在编辑的文字，避免重渲染丢失 */
