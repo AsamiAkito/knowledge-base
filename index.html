@@ -155,11 +155,61 @@
   .post .body p:last-child{margin-bottom:0}
   .post .body .clamp{display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden}
 
-  .imgs{display:grid;gap:5px;margin:14px 0 2px;grid-template-columns:repeat(3,1fr)}
-  .imgs.one{grid-template-columns:1fr;max-width:360px}.imgs.two{grid-template-columns:1fr 1fr}
-  .imgs .ph{aspect-ratio:1;border-radius:var(--r);background:var(--bg-soft);border:1px solid var(--line);
+  /* 配图：单张居中按原比例；2/4 张两列居中对称；其余每行 3 张，最多 3 行，超出在第 9 格显示 +N */
+  .imgs{display:grid;gap:5px;margin:14px auto 2px;grid-template-columns:repeat(3,minmax(0,1fr))}
+  .imgs.two{grid-template-columns:repeat(2,minmax(0,1fr));max-width:440px}
+  .imgs .ph{position:relative;aspect-ratio:1;border-radius:var(--r);background:var(--bg-soft);border:1px solid var(--line);
     display:flex;align-items:center;justify-content:center;font-size:26px;color:var(--text-dim);overflow:hidden}
-  .imgs .ph img{width:100%;height:100%;object-fit:cover}
+  .imgs .ph img{width:100%;height:100%;object-fit:cover;transition:transform .35s}
+  .imgs .ph.zoom{cursor:zoom-in}.imgs .ph.zoom:hover img{transform:scale(1.03)}
+  .imgs.one{display:block;text-align:center}
+  .imgs.one .ph.zoom{display:contents}
+  .imgs.one .ph.zoom img{display:inline-block;vertical-align:top;width:auto;height:auto;max-width:100%;max-height:440px;
+    border:1px solid var(--line);border-radius:var(--r);background:var(--bg-soft)}
+  .imgs.one .ph.zoom:hover img{transform:none}
+  .imgs.one .ph:not(.zoom){display:inline-flex;width:160px}
+  .imgs .more{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;cursor:pointer;
+    background:rgba(10,11,13,.55);color:#fff;font-family:var(--display);font-size:26px;letter-spacing:.04em}
+  .imgs .more:hover{background:rgba(10,11,13,.68)}
+  .imgs-less{display:block;margin:8px auto 0;border:0;background:transparent;color:var(--text-dim);cursor:pointer;
+    font-family:var(--mono);font-size:11.5px;letter-spacing:.12em}
+  .imgs-less:hover{color:var(--text)}
+
+  /* 配图查看器：左图右文 */
+  .pv-bg{position:fixed;inset:0;z-index:90;background:rgba(8,9,11,.78);display:flex;align-items:center;justify-content:center;
+    padding:24px;animation:lbin .18s ease;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+  .pv{display:flex;width:min(1180px,100%);height:min(88vh,820px);background:var(--card);border-radius:10px;overflow:hidden;
+    box-shadow:0 24px 70px rgba(0,0,0,.5)}
+  .pv-media{position:relative;flex:1 1 auto;min-width:0;background:#141517;display:flex;align-items:center;justify-content:center;user-select:none}
+  .pv-media img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+  .pv-count{position:absolute;top:14px;right:14px;padding:3px 11px;border-radius:999px;background:rgba(0,0,0,.42);
+    color:#fff;font-family:var(--mono);font-size:12px;letter-spacing:.06em}
+  .pv-nav{position:absolute;top:50%;transform:translateY(-50%);width:40px;height:40px;border-radius:50%;border:0;
+    background:rgba(255,255,255,.82);color:#17181a;cursor:pointer;display:flex;align-items:center;justify-content:center;
+    opacity:0;transition:opacity .2s;box-shadow:0 2px 10px rgba(0,0,0,.25)}
+  .pv-media:hover .pv-nav{opacity:1}.pv-nav.prev{left:14px}.pv-nav.next{right:14px}
+  .pv-dots{position:absolute;bottom:14px;left:0;right:0;display:flex;justify-content:center;gap:7px}
+  .pv-dots i{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.45);cursor:pointer}
+  .pv-dots i.on{background:#fff}
+  .pv-side{width:400px;flex:none;display:flex;flex-direction:column;border-left:1px solid var(--line);min-height:0}
+  .pv-head{display:flex;align-items:center;gap:12px;padding:20px 22px;border-bottom:1px solid var(--line-s)}
+  .pv-head .who{font-weight:700;font-size:15px}
+  .pv-scroll{flex:1;overflow:auto;padding:18px 22px}
+  .pv-text{font-size:15px;line-height:1.8}.pv-text p{margin:0 0 .75em}
+  .pv-date{font-family:var(--mono);font-size:12px;color:var(--text-dim);letter-spacing:.06em;margin-top:12px;
+    padding-bottom:16px;border-bottom:1px solid var(--line-s)}
+  .pv-ctitle{font-size:13px;color:var(--text-dim);margin:16px 0 14px}
+  .pv-foot{border-top:1px solid var(--line-s);padding:12px 18px;display:flex;align-items:center;gap:14px}
+  .pv-foot .cmt-form{flex:1;margin:0}
+  .pv-foot .cmt-form input{border-radius:999px}
+  .pv-close{position:fixed;top:18px;right:20px;width:40px;height:40px;border-radius:50%;border:0;cursor:pointer;
+    background:rgba(255,255,255,.14);color:#fff;font-size:22px;line-height:40px;padding:0;z-index:2}
+  .pv-close:hover{background:rgba(255,255,255,.26)}
+  @media(max-width:760px){
+    .pv-bg{padding:0}.pv{flex-direction:column;height:100%;border-radius:0}
+    .pv-media{flex:0 0 52vh}.pv-side{width:auto;flex:1;border-left:0}.pv-nav{opacity:1;width:34px;height:34px}
+    .pv-close{top:10px;right:10px;background:rgba(0,0,0,.45)}.pv-count{right:auto;left:14px}
+  }
   .imgbuf{display:flex;flex-wrap:wrap;gap:8px;margin-top:11px}
   .imgbuf .ib{position:relative;width:72px;height:72px;border-radius:var(--r);border:1px solid var(--line);background:var(--bg-soft);
     display:flex;align-items:center;justify-content:center;font-size:22px;overflow:hidden}
@@ -552,7 +602,7 @@ function applyTheme(t){document.documentElement.setAttribute("data-theme",t);$("
 let ownerUnlocked=false;
 (function(){try{if(location.hash.replace("#","").toLowerCase()==="edit"){localStorage.setItem(KEY_OWNER,"1");history.replaceState(null,"",location.pathname+location.search);}ownerUnlocked=localStorage.getItem(KEY_OWNER)==="1";}catch(e){}})();
 
-let state={view:"feed",feedOpen:null,kbSel:null,favFolder:0,favItem:null,expanded:new Set(),editMode:false,editingPost:null,editingFile:false,composerText:"",composerImgText:"",imgBuf:[],composerImgs:[],imgTarget:"c",moving:null,fileBuf:null};
+let state={view:"feed",feedOpen:null,kbSel:null,favFolder:0,favItem:null,expanded:new Set(),editMode:false,editingPost:null,editingFile:false,composerText:"",composerImgText:"",imgBuf:[],composerImgs:[],imgTarget:"c",imgsOpen:new Set(),pv:null,moving:null,fileBuf:null};
 
 let _hl=0;
 function md(src){
@@ -651,6 +701,63 @@ function likeCount(id){return store.likes[id]?1:0;}
 function isImgSrc(x){return /^(https?:|data:image\/)/.test(x)||/\.(png|jpe?g|gif|webp|avif|svg)(\?.*)?$/i.test(x);}
 function imgBufHTML(k){const arr=k==="c"?state.composerImgs:state.imgBuf;return '<div class="imgbuf">'+arr.map((x,i)=>'<div class="ib">'+(isImgSrc(x)?'<img src="'+esc(x)+'" alt="">':emojify(esc(x)))+'<button data-action="imgbuf-del" data-k="'+k+'" data-i="'+i+'" title="移除">×</button></div>').join("")+'</div>';}
 function readImgInput(id){const el=$("#"+id);return el?el.value.split(/[,，]/).map(s=>s.trim()).filter(Boolean):[];}
+function imgsHTML(p){
+  const imgs=p.images||[],n=imgs.length;if(!n)return "";
+  const open=state.imgsOpen.has(p.id),fold=n>9&&!open;
+  let vi=0;
+  const cells=imgs.map((x,i)=>{
+    const isI=isImgSrc(x),k=isI?vi++:-1;if(fold&&i>8)return "";
+    const more=fold&&i===8?'<div class="more" data-action="imgs-more" data-id="'+p.id+'">+'+(n-8)+'</div>':'';
+    const attr=isI?' data-action="pv-open" data-id="'+p.id+'" data-i="'+k+'"':'';
+    return '<div class="ph'+(isI?' zoom':'')+'"'+attr+'>'+(isI?'<img src="'+esc(x)+'" alt="" loading="lazy">':emojify(esc(x)))+more+'</div>';
+  }).join("");
+  const cls=n===1?' one':(n===2||n===4)?' two':'';
+  return '<div class="imgs'+cls+'">'+cells+'</div>'+(n>9&&open?'<button class="imgs-less" data-action="imgs-more" data-id="'+p.id+'">收起 ▲</button>':'');
+}
+
+/* ---------- 配图查看器 ---------- */
+function pvPost(){return state.pv&&DATA.feed.find(x=>x.id===state.pv.id);}
+function pvSrcs(p){return (p.images||[]).filter(isImgSrc);}
+function openViewer(id,i){
+  closeViewer();state.pv={id,i:+i||0};
+  const bg=document.createElement("div");bg.className="pv-bg";bg.id="pv";
+  bg.innerHTML='<button class="pv-close" data-action="pv-close" title="关闭 (Esc)">×</button><div class="pv"><div class="pv-media"></div><div class="pv-side"></div></div>';
+  bg.addEventListener("click",e=>{if(e.target===bg)closeViewer();});
+  let tx=null;const m=bg.querySelector(".pv-media");
+  m.addEventListener("touchstart",e=>{tx=e.touches[0].clientX;},{passive:true});
+  m.addEventListener("touchend",e=>{if(tx===null)return;const dx=e.changedTouches[0].clientX-tx;tx=null;if(Math.abs(dx)>40)pvGo(dx<0?1:-1);});
+  document.body.appendChild(bg);document.body.style.overflow="hidden";
+  document.addEventListener("keydown",pvKey);
+  pvMedia();pvSide();
+}
+function closeViewer(){state.pv=null;const b=$("#pv");if(b)b.remove();document.body.style.overflow="";document.removeEventListener("keydown",pvKey);}
+function pvKey(e){
+  if(e.key==="Escape"){closeViewer();return;}
+  if(e.target.closest&&e.target.closest("input,textarea"))return;
+  if(e.key==="ArrowLeft")pvGo(-1);else if(e.key==="ArrowRight")pvGo(1);
+}
+function pvGo(d){const p=pvPost();if(!p)return;const n=pvSrcs(p).length;if(n<2)return;state.pv.i=(state.pv.i+d+n)%n;pvMedia();}
+function pvMedia(){
+  const p=pvPost(),box=$("#pv .pv-media");if(!p||!box)return;
+  const srcs=pvSrcs(p),n=srcs.length,i=state.pv.i;
+  const arrow=d=>'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="'+(d<0?'m15 18-6-6 6-6':'m9 18 6-6-6-6')+'"/></svg>';
+  box.innerHTML='<img src="'+esc(srcs[i]||"")+'" alt="">'
+    +(n>1?'<span class="pv-count">'+(i+1)+'/'+n+'</span>'
+      +'<button class="pv-nav prev" data-action="pv-go" data-d="-1">'+arrow(-1)+'</button><button class="pv-nav next" data-action="pv-go" data-d="1">'+arrow(1)+'</button>'
+      +'<div class="pv-dots">'+srcs.map((_,k)=>'<i class="'+(k===i?'on':'')+'" data-action="pv-to" data-i="'+k+'"></i>').join("")+'</div>':'');
+}
+function pvSide(){
+  const p=pvPost(),box=$("#pv .pv-side");if(!p||!box)return;
+  const prof=DATA.profile||{name:"我",avatar:""},cs=feedComments(p.id),liked=store.likes[p.id];
+  const clist=cs.map(c=>'<div class="cmt"><div class="avatar">'+esc((c.name||'我')[0])+'</div><div class="c-main"><div class="c-name">'+esc(c.name||'我')+'<span>'+esc(c.when||'')+'</span></div><div class="c-text">'+esc(c.text)+'</div></div></div>').join("");
+  box.innerHTML='<div class="pv-head"><div class="avatar">'+avatarHTML(prof.avatar)+'</div><div class="who">'+esc(prof.name||"我")+'</div></div>'
+    +'<div class="pv-scroll"><div class="pv-text">'+md(p.text)+'</div><div class="pv-date">'+esc(p.date)+'</div>'
+    +'<div class="pv-ctitle">'+(cs.length?'共 '+cs.length+' 条评论':'还没有评论，来说点什么吧')+'</div>'+clist+'</div>'
+    +'<div class="pv-foot"><form class="cmt-form" data-action="feed-comment" data-id="'+p.id+'"><input name="text" placeholder="说点什么…" autocomplete="off" maxlength="300"/></form>'
+    +'<button class="act '+(liked?'liked':'')+'" data-action="pv-like"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg><span>'+(likeCount(p.id)||'赞')+'</span></button>'
+    +'<span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>'+(cs.length||'评论')+'</span></span></div>';
+}
+
 function postHTML(p,full){
   const liked=store.likes[p.id];const cs=feedComments(p.id);const imgs=(p.images||[]);const em=state.editMode;
   if(state.editingPost===p.id){
@@ -658,7 +765,7 @@ function postHTML(p,full){
       +imgBufHTML("e")+'<div class="row2"><input id="pi-'+p.id+'" placeholder="追加 emoji 或图片URL，逗号分隔（可留空）"><button class="btn sm soft" data-action="post-img-add" data-k="e">＋ 上传图片</button></div>'
       +'<div class="edit-actions" style="margin-top:10px;justify-content:flex-end"><button class="btn sm" data-action="post-save" data-id="'+p.id+'">保存</button><button class="mini" data-action="post-cancel">取消</button></div></div>';
   }
-  const imgHTML=imgs.length?'<div class="imgs '+(imgs.length===1?'one':imgs.length===2?'two':'')+'">'+imgs.map(x=>'<div class="ph">'+(isImgSrc(x)?'<img src="'+esc(x)+'" alt="">':emojify(esc(x)))+'</div>').join("")+'</div>':"";
+  const imgHTML=imgsHTML(p);
   const body='<div class="body '+(full?'':'clamp')+'" data-action="feed-open" data-id="'+p.id+'">'+md(p.text)+'</div>';
   const like='<button class="act '+(liked?'liked':'')+'" data-action="feed-like" data-id="'+p.id+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg><span>'+(likeCount(p.id)||'赞')+'</span></button>';
   const cmt='<button class="act" data-action="feed-open" data-id="'+p.id+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>'+(cs.length||'评论')+'</span></button>';
@@ -905,6 +1012,12 @@ document.addEventListener("click",e=>{
     case "feed-open":if(state.editMode&&state.editingPost)return;state.feedOpen=id;render();window.scrollTo(0,0);return;
     case "post-new":{const t=$("#composerText").value.trim();if(!t){toast("写点什么再发");return;}const imgs=state.composerImgs.concat(readImgInput("composerImg"));DATA.feed.unshift({id:uid(),date:now(),text:t,images:imgs.length?imgs:undefined});state.composerText="";state.composerImgText="";state.composerImgs=[];saveDraft();renderFeed();toast("已发布到本地，记得点上方“发布”同步线上");return;}
     case "post-edit":{captureComposer();const p=DATA.feed.find(x=>x.id===id);state.editingPost=id;state.imgBuf=(p&&p.images||[]).slice();renderFeed();return;}
+    case "imgs-more":{if(state.imgsOpen.has(id))state.imgsOpen.delete(id);else state.imgsOpen.add(id);renderFeed();return;}
+    case "pv-open":openViewer(id,el.dataset.i);return;
+    case "pv-close":closeViewer();return;
+    case "pv-go":pvGo(+el.dataset.d);return;
+    case "pv-to":state.pv.i=+el.dataset.i;pvMedia();return;
+    case "pv-like":{const pid=state.pv&&state.pv.id;if(!pid)return;store.likes[pid]=!store.likes[pid];saveStore();pvSide();renderFeed();return;}
     case "post-img-add":state.imgTarget=el.dataset.k;$("#postImgInput").click();return;
     case "imgbuf-del":{captureImgEdit();(el.dataset.k==="c"?state.composerImgs:state.imgBuf).splice(+el.dataset.i,1);renderFeed();return;}
     case "post-cancel":state.editingPost=null;state.imgBuf=[];renderFeed();return;
@@ -948,6 +1061,7 @@ document.addEventListener("submit",e=>{
   const f=e.target.closest('[data-action="feed-comment"]');if(!f)return;e.preventDefault();
   const id=f.dataset.id,inp=f.querySelector("input"),text=(inp.value||"").trim();if(!text)return;
   (store.cmts[id]=store.cmts[id]||[]).push({name:"访客",text,when:"刚刚"});saveStore();renderFeed();
+  if(state.pv){pvSide();const sc=$("#pv .pv-scroll");if(sc)sc.scrollTop=sc.scrollHeight;const ip=$("#pv .cmt-form input");if(ip)ip.focus();}
 });
 
 /* 选图前后保住正在编辑的文字，避免重渲染丢失 */
@@ -957,7 +1071,7 @@ $("#postImgInput").addEventListener("change",async e=>{
   captureImgEdit();toast("处理图片中…");
   for(const f of files){
     if(!/^image\//.test(f.type))continue;
-    try{(state.imgTarget==="c"?state.composerImgs:state.imgBuf).push(await downscale(f,1600,.85));}catch(err){toast("跳过一张："+err.message);}
+    try{(state.imgTarget==="c"?state.composerImgs:state.imgBuf).push(await compressImg(f));}catch(err){toast("跳过一张："+err.message);}
   }
   renderFeed();toast("已添加，点“发布到线上”时会自动上传到 GitHub");
 });
@@ -1159,6 +1273,26 @@ function captureContacts(){
 }
 
 /* ---------- 照片：压缩 & 上传 ---------- */
+const WEBP_OK=(()=>{try{const c=document.createElement("canvas");c.width=c.height=1;return c.toDataURL("image/webp").indexOf("data:image/webp")===0;}catch(e){return false;}})();
+function extOf(dataUrl){const m=/^data:image\/(\w+)/.exec(dataUrl);const t=m?m[1]:"jpeg";return t==="jpeg"?"jpg":t;}
+/* 配图压缩：长边不超过 1920，优先 WebP(.82，同等清晰度体积更小)，不支持则 JPEG；GIF 保留动画；压完反而更大的小图保留原图 */
+function compressImg(file){
+  return new Promise((res,rej)=>{const rd=new FileReader();
+    rd.onerror=()=>rej(new Error("读取失败"));
+    rd.onload=()=>{const orig=String(rd.result);
+      if(file.type==="image/gif"){res(orig);return;}
+      const img=new Image();
+      img.onerror=()=>rej(new Error("不是有效图片"));
+      img.onload=()=>{const max=1920;let w=img.width,h=img.height;const sc=Math.min(1,max/Math.max(w,h));
+        w=Math.round(w*sc);h=Math.round(h*sc);
+        const c=document.createElement("canvas");c.width=w;c.height=h;
+        const g=c.getContext("2d");if(!WEBP_OK){g.fillStyle="#fff";g.fillRect(0,0,w,h);}
+        g.imageSmoothingQuality="high";g.drawImage(img,0,0,w,h);
+        const out=WEBP_OK?c.toDataURL("image/webp",.82):c.toDataURL("image/jpeg",.86);
+        res(sc===1&&out.length>=orig.length?orig:out);};
+      img.src=orig;};
+    rd.readAsDataURL(file);});
+}
 function downscale(file,max,q){
   return new Promise((res,rej)=>{const rd=new FileReader();
     rd.onerror=()=>rej(new Error("读取失败"));
@@ -1177,7 +1311,7 @@ async function uploadPendingPhotos(cfg,headers){
   for(let i=0;i<pend.length;i++){
     const p=pend[i];toast("上传照片 "+(i+1)+"/"+pend.length+"…");
     const m=p.src.match(/^data:(image\/[\w+]+);base64,([\s\S]+)$/);if(!m)continue;
-    const path="assets/photos/"+p.id+".jpg";
+    const path="assets/photos/"+p.id+"."+extOf(p.src);
     const url="https://api.github.com/repos/"+cfg.owner+"/"+cfg.repo+"/contents/"+path;
     let sha=null;try{const r=await fetch(url+"?ref="+encodeURIComponent(cfg.branch),{headers,cache:"no-store"});if(r.ok)sha=(await r.json()).sha;}catch(e){}
     const body={message:"上传照片 "+path,content:m[2],branch:cfg.branch};if(sha)body.sha=sha;
@@ -1190,7 +1324,7 @@ async function uploadPendingPhotos(cfg,headers){
   for(let k=0;k<jobs.length;k++){
     const [post,i]=jobs[k];toast("上传配图 "+(k+1)+"/"+jobs.length+"…");
     const m=post.images[i].match(/^data:(image\/[\w+]+);base64,([\s\S]+)$/);if(!m)continue;
-    const path="assets/photos/"+uid()+".jpg";
+    const path="assets/photos/"+uid()+"."+extOf(post.images[i]);
     const url="https://api.github.com/repos/"+cfg.owner+"/"+cfg.repo+"/contents/"+path;
     const put=await fetch(url,{method:"PUT",headers:Object.assign({"Content-Type":"application/json"},headers),body:JSON.stringify({message:"上传配图 "+path,content:m[2],branch:cfg.branch})});
     if(!put.ok){const e=await put.json().catch(()=>({}));throw new Error("配图上传失败："+(e.message||put.status));}
