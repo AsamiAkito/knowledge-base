@@ -317,6 +317,32 @@
   .doc-editor input.f:focus,.doc-editor textarea.f:focus{border-color:var(--accent)}
   .doc-editor textarea.body{min-height:360px;font:13px/1.75 var(--mono);resize:vertical}
   .note-edit{display:flex;gap:8px;margin-bottom:8px;align-items:flex-start}
+  /* 富文本编辑 */
+  .kb-tb{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin:0 0 10px;padding:6px 0;position:sticky;top:-26px;z-index:3;background:var(--card)}
+  .kb-tb button{min-width:32px;height:30px;padding:0 9px;border:1px solid var(--line);background:transparent;color:var(--text-soft);
+    border-radius:var(--r);cursor:pointer;font-size:14px;display:inline-flex;align-items:center;justify-content:center;gap:6px;transition:all .15s}
+  .kb-tb button:hover{border-color:var(--accent);color:var(--text)}
+  .kb-tb button.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+  .kb-tb .sep{width:1px;height:20px;background:var(--line);margin:0 4px}
+  .kb-tb .sw{width:14px;height:14px;border-radius:2px;display:block}
+  .kb-tb .sw.y{background:#ffd84d}.kb-tb .sw.r{background:#ff6b6b}
+  .kb-tb .tb-note{font-size:12.5px}
+  .rte{min-height:360px;border:1px solid var(--line);background:var(--bg-soft);border-radius:var(--r);padding:16px 18px;outline:0;margin-bottom:18px}
+  .rte:focus{border-color:var(--accent)}
+  .rte>:first-child{margin-top:0}
+  .md mark.y{background:rgba(255,206,0,.4);color:inherit;padding:0 .05em}
+  .md mark.r{background:rgba(255,70,70,.32);color:inherit;padding:0 .05em}
+  .md u{text-underline-offset:3px}
+  span.na{display:inline-block;width:0;height:1.15em;vertical-align:text-bottom}
+  .rte span.na{width:2px;margin:0 1px;background:var(--accent)}
+  #noteLines{position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:40;overflow:visible}
+  #noteLines path{fill:none;stroke:var(--accent);stroke-width:2;shape-rendering:crispEdges}
+  .sticky.edit{display:flex;gap:6px;align-items:flex-start;cursor:text;position:relative;padding-right:26px}
+  .sticky.edit textarea{flex:1;min-width:0;min-height:22px;border:0;background:transparent;resize:none;outline:0;padding:0;
+    color:var(--text);font:inherit;line-height:1.65;overflow:hidden}
+  .sticky.edit .x{position:absolute;top:8px;right:6px;border:0;background:transparent;color:var(--text-dim);cursor:pointer;font-size:12px;padding:2px 4px}
+  .sticky.edit .x:hover{color:var(--danger)}
+  .sticky.edit:focus-within{border-color:var(--accent);color:var(--text)}
   .note-edit textarea{flex:1;min-height:46px;border:1px solid var(--line);background:var(--bg-soft);
     border-radius:var(--r);padding:8px 11px;font-size:13px;color:var(--text);outline:0;resize:vertical}
 
@@ -619,13 +645,14 @@ function applyTheme(t){document.documentElement.setAttribute("data-theme",t);$("
 let ownerUnlocked=false;
 (function(){try{if(location.hash.replace("#","").toLowerCase()==="edit"){localStorage.setItem(KEY_OWNER,"1");history.replaceState(null,"",location.pathname+location.search);}ownerUnlocked=localStorage.getItem(KEY_OWNER)==="1";}catch(e){}})();
 
-let state={view:"feed",feedOpen:null,kbSel:null,favFolder:0,favItem:null,expanded:new Set(),editMode:false,editingPost:null,editingFile:false,composerText:"",composerImgText:"",imgBuf:[],composerImgs:[],imgTarget:"c",imgsOpen:new Set(),pv:null,moving:null,fileBuf:null};
+let state={view:"feed",feedOpen:null,kbSel:null,favFolder:0,favItem:null,expanded:new Set(),editMode:false,editingPost:null,editingFile:false,composerText:"",composerImgText:"",imgBuf:[],composerImgs:[],imgTarget:"c",imgsOpen:new Set(),pv:null,fmtOn:new Set(),moving:null,fileBuf:null};
 
 let _hl=0;
 function md(src){
   const blocks=[];
   src=(src||"").replace(/```(\w*)\n([\s\S]*?)```/g,function(_,l,c){blocks.push('<pre><code>'+esc(c.replace(/\n$/,""))+'</code></pre>');return "\nCBLK"+(blocks.length-1)+"CBLK\n";});
   const inline=t=>esc(t)
+    .replace(/&lt;(\/?)u&gt;/g,"<$1u>").replace(/&lt;mark class=&quot;([yr])&quot;&gt;([\s\S]*?)&lt;\/mark&gt;/g,'<mark class="$1">$2</mark>')
     .replace(/==([^=]+)==/g,(_,x)=>{_hl++;return '<mark class="hl" id="hl-'+_hl+'" data-action="kb-hl" data-n="'+_hl+'">'+x+'</mark>';})
     .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g,'<img alt="$1" src="$2">')
     .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>')
@@ -792,7 +819,7 @@ function postHTML(p,full){
   const liked=store.likes[p.id];const cs=feedComments(p.id);const imgs=(p.images||[]);const em=state.editMode;
   if(state.editingPost===p.id){
     return '<div class="post inline-editor"><textarea id="pe-'+p.id+'">'+esc(p.text)+'</textarea>'
-      +imgBufHTML("e")+'<div class="row2"><input id="pi-'+p.id+'" placeholder="追加 emoji 或图片URL，逗号分隔（可留空）"><button class="btn sm soft" data-action="post-img-add" data-k="e">＋ 上传图片</button></div>'
+      +imgBufHTML("e")+'<div class="row2"><input id="pi-'+p.id+'" placeholder="emoji / 图片URL"><button class="btn sm soft" data-action="post-img-add" data-k="e">＋ 上传图片</button></div>'
       +'<div class="edit-actions" style="margin-top:10px;justify-content:flex-end"><button class="btn sm" data-action="post-save" data-id="'+p.id+'">保存</button><button class="mini" data-action="post-cancel">取消</button></div></div>';
   }
   const imgHTML=imgsHTML(p);
@@ -820,11 +847,11 @@ function renderFeed(){
     app.innerHTML='<div class="with-rail feed-layout"><div><div class="feed"><button class="backlink" data-action="view" data-view="feed"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>返回动态</button>'+postHTML(p,true)+'</div></div><aside class="rail"><div class="rail-scroll">'+railPhotosHTML()+'</div></aside></div>';
     applyAllPV();return;
   }
-  const composer=state.editMode?'<div class="composer"><textarea id="composerText" placeholder="有什么新鲜事？支持 Markdown…">'+esc(state.composerText||"")+'</textarea>'
-    +(state.composerImgs.length?imgBufHTML("c"):'')+'<div class="row2"><input id="composerImg" placeholder="emoji 或图片URL，逗号分隔（可留空）" value="'+esc(state.composerImgText||"")+'"><button class="btn soft" data-action="post-img-add" data-k="c">＋ 上传图片</button><div class="spacer" style="flex:1"></div><button class="btn" data-action="post-new">发布动态</button></div></div>':'';
+  const composer=state.editMode?'<div class="composer"><textarea id="composerText" placeholder="有什么新鲜事？">'+esc(state.composerText||"")+'</textarea>'
+    +(state.composerImgs.length?imgBufHTML("c"):'')+'<div class="row2"><input id="composerImg" placeholder="emoji / 图片URL" value="'+esc(state.composerImgText||"")+'"><button class="btn soft" data-action="post-img-add" data-k="c">＋ 上传图片</button><div class="spacer" style="flex:1"></div><button class="btn" data-action="post-new">发布动态</button></div></div>':'';
   const list=DATA.feed.filter(p=>state.editMode||!p.hidden);
   app.innerHTML='<div class="with-rail feed-layout"><div><div class="feed"><div class="feed-h"><h1>动态</h1><p>DAILY LOG //</p></div>'+composer
-    +(list.length?list.map(p=>postHTML(p,false)).join(""):'<div class="empty">还没有动态'+(state.editMode?'，在上面写第一条吧。':'。')+'</div>')+'</div></div><aside class="rail"><div class="rail-scroll">'+railPhotosHTML()+'</div></aside></div>';
+    +(list.length?list.map(p=>postHTML(p,false)).join(""):'<div class="empty">还没有动态</div>')+'</div></div><aside class="rail"><div class="rail-scroll">'+railPhotosHTML()+'</div></aside></div>';
   applyAllPV();
 }
 
@@ -841,23 +868,262 @@ function treeHTML(nodes,depth){
 }
 function fileEditorHTML(node){
   const b=state.fileBuf;
-  const notes=(b.notes||[]).map((nt,i)=>'<div class="note-edit"><textarea data-note="'+i+'">'+esc(nt.text||"")+'</textarea><button class="mini danger" data-action="kbedit-note-del" data-i="'+i+'">✕</button></div>').join("");
+  const tb='<div class="kb-tb" id="kbTb">'
+    +'<button data-fmt="b" title="粗体"><b>B</b></button><button data-fmt="i" title="斜体"><i style="font-family:Georgia,serif">I</i></button>'
+    +'<button data-fmt="u" title="下划线"><u>U</u></button><button data-fmt="h" title="标题"><b>H</b></button>'
+    +'<button data-fmt="y" title="黄色高亮"><span class="sw y"></span></button><button data-fmt="r" title="红色高亮"><span class="sw r"></span></button>'
+    +'<span class="sep"></span><button data-fmt="note" class="tb-note">＋ 便签</button></div>';
   return '<div class="doc-editor"><div class="crumb">编辑文档</div>'
     +'<label>标题</label><input class="f" id="fe-name" value="'+esc(b.name||"")+'">'
-    +'<label>标签（逗号分隔）</label><input class="f" id="fe-tags" value="'+esc((b.tags||[]).join(", "))+'">'
-    +'<label>正文（Markdown，用 ==文字== 标高亮）</label><textarea class="f body" id="fe-body">'+esc(b.body||"")+'</textarea>'
-    +'<label>便签（按顺序对应正文里第 1、2… 个高亮）</label>'+notes
-    +'<button class="mini" data-action="kbedit-note-add" style="margin-bottom:14px">＋ 添加便签</button>'
+    +'<label>标签</label><input class="f" id="fe-tags" value="'+esc((b.tags||[]).join(", "))+'">'
+    +'<label>正文</label>'+tb+'<div class="rte md" id="fe-body" contenteditable="true" spellcheck="false">'+(b.html||"")+'</div>'
     +'<div class="doc-tools"><button class="btn sm" data-action="kbedit-save" data-id="'+node.id+'">保存</button><button class="btn sm soft" data-action="kbedit-cancel">取消</button></div></div>';
 }
+function notesEditHTML(){
+  return '<div class="ph-title">NOTES</div>'+state.fileBuf.notes.map((n,i)=>'<div class="sticky edit" data-nid="'+n.id+'"><span class="n">'+(i+1)+'</span>'
+    +'<textarea rows="1" data-note-id="'+n.id+'">'+esc(n.text||"")+'</textarea><button class="x" data-action="kbedit-note-del" data-nid="'+n.id+'">✕</button></div>').join("");
+}
+
+/* ---------- 知识库富文本：保存为 HTML（node.fmt="html"），旧文档仍按 Markdown 显示，编辑时转换 ---------- */
+const HL_COLOR={y:"rgb(255, 216, 77)",r:"rgb(255, 107, 107)"};
+const FMT_SEL={b:"b,strong",i:"i,em",u:"u",y:"mark.y",r:"mark.r"};
+function isHtmlDoc(n){return n&&n.fmt==="html";}
+function tpl(html){const t=document.createElement("template");t.innerHTML=html||"";return t;}
+function mdToEditor(n){
+  _hl=0;const t=tpl(md(n.body||""));
+  const notes=(n.notes||[]).map(x=>({id:"nt"+uid(),text:x.text||""}));
+  t.content.querySelectorAll("mark.hl").forEach(m=>{const k=+m.dataset.n;["id","data-action","data-n"].forEach(a=>m.removeAttribute(a));
+    if(notes[k-1])m.dataset.nid=notes[k-1].id;else m.className="y";});
+  return {html:t.innerHTML,notes};
+}
+/* 只保留允许的标签和属性，去掉零宽字符和空的格式元素；keep：保留哪些便签锚点 */
+function cleanDocHTML(html,keep){
+  const t=tpl(html);
+  const OK=/^(P|DIV|BR|H1|H2|H3|B|STRONG|I|EM|U|MARK|SPAN|UL|OL|LI|BLOCKQUOTE|PRE|CODE|A|IMG|HR|TABLE|THEAD|TBODY|TR|TH|TD)$/;
+  const unwrap=c=>c.replaceWith(...c.childNodes);
+  (function walk(node){[...node.childNodes].forEach(c=>{
+    if(c.nodeType===3){c.nodeValue=c.nodeValue.replace(/\u200B/g,"");if(!c.nodeValue)c.remove();return;}
+    if(c.nodeType!==1){c.remove();return;}
+    walk(c);
+    const tg=c.tagName;if(!OK.test(tg)){unwrap(c);return;}
+    const nid=c.getAttribute("data-nid"),cls=(c.getAttribute("class")||"").split(/\s+/);
+    const href=c.getAttribute("href"),src=c.getAttribute("src"),alt=c.getAttribute("alt");
+    [...c.attributes].forEach(a=>c.removeAttribute(a.name));
+    if(tg==="A"&&href&&!/^\s*javascript:/i.test(href)){c.setAttribute("href",href);c.setAttribute("target","_blank");c.setAttribute("rel","noopener");}
+    if(tg==="IMG"){if(!src){c.remove();return;}c.setAttribute("src",src);c.setAttribute("alt",alt||"");}
+    const isNote=nid&&(!keep||keep.has(nid));
+    if(tg==="SPAN"){if(cls.includes("na")&&isNote){c.className="na";c.dataset.nid=nid;}else unwrap(c);return;}
+    if(tg==="MARK"){
+      if(nid||cls.includes("hl")){if(isNote){c.className="hl";c.dataset.nid=nid;}else unwrap(c);return;}
+      const k=cls.find(x=>x==="y"||x==="r");if(k)c.className=k;else{unwrap(c);return;}
+    }
+    if(/^(B|STRONG|I|EM|U|MARK)$/.test(tg)&&!c.textContent)c.remove();
+  });})(t.content);
+  return t.innerHTML.trim();
+}
+/* 显示：给锚点按出现顺序编号，便签按同样顺序排列 */
+function viewDoc(node){
+  if(!isHtmlDoc(node)){_hl=0;return {html:md(node.body),notes:(node.notes||[]).map(n=>n.text)};}
+  const t=tpl(node.body),order=[];
+  t.content.querySelectorAll("[data-nid]").forEach(a=>{const i=order.length+1;order.push(a.dataset.nid);a.id="hl-"+i;a.dataset.n=i;a.dataset.action="kb-hl";});
+  const rank=n=>{const i=order.indexOf(n.id);return i<0?1e9:i;};
+  return {html:t.innerHTML,notes:(node.notes||[]).slice().sort((a,b)=>rank(a)-rank(b)).map(n=>n.text)};
+}
+/* 下载用：HTML 转回 Markdown */
+function htmlToMd(html){
+  const inl=n=>[...n.childNodes].map(c=>{
+    if(c.nodeType===3)return c.nodeValue.replace(/\u200B/g,"");if(c.nodeType!==1)return "";
+    const tg=c.tagName,x=inl(c);
+    if(tg==="B"||tg==="STRONG")return x.trim()?"**"+x+"**":x;
+    if(tg==="I"||tg==="EM")return x.trim()?"*"+x+"*":x;
+    if(tg==="U")return "<u>"+x+"</u>";
+    if(tg==="MARK")return c.classList.contains("hl")?"=="+x+"==":'<mark class="'+c.className+'">'+x+'</mark>';
+    if(tg==="CODE")return "`"+c.textContent+"`";
+    if(tg==="A")return "["+x+"]("+c.getAttribute("href")+")";
+    if(tg==="IMG")return "!["+(c.getAttribute("alt")||"")+"]("+c.getAttribute("src")+")";
+    if(tg==="BR")return "\n";
+    return x;}).join("");
+  const blk=(n,pre)=>[...n.childNodes].map(c=>{
+    if(c.nodeType===3)return c.nodeValue.trim()?pre+c.nodeValue.trim()+"\n\n":"";if(c.nodeType!==1)return "";
+    const tg=c.tagName;
+    if(/^H[1-3]$/.test(tg))return pre+"#".repeat(+tg[1])+" "+inl(c).trim()+"\n\n";
+    if(tg==="UL"||tg==="OL")return [...c.children].map((li,i)=>pre+(tg==="OL"?(i+1)+". ":"- ")+inl(li).trim()).join("\n")+"\n\n";
+    if(tg==="BLOCKQUOTE")return blk(c,pre+"> ");
+    if(tg==="PRE")return "```\n"+c.textContent.replace(/\n$/,"")+"\n```\n\n";
+    if(tg==="HR")return "---\n\n";
+    if(tg==="TABLE")return [...c.querySelectorAll("tr")].map((tr,i)=>{const row="| "+[...tr.children].map(td=>inl(td).trim()).join(" | ")+" |";return i===0?row+"\n|"+[...tr.children].map(()=>"---|").join(""):row;}).join("\n")+"\n\n";
+    const x=inl(c).trim();return x?pre+x.replace(/\n/g,"\n"+pre)+"\n\n":"";
+  }).join("");
+  return blk(tpl(html).content,"").trim()+"\n";
+}
+
+/* ---------- 编辑器：格式按钮 ---------- */
+function rteEl(){return document.getElementById("fe-body");}
+function rteRange(){
+  const ed=rteEl(),sel=getSelection();if(!ed)return null;
+  let r=sel.rangeCount?sel.getRangeAt(0):null;
+  if(!r||!ed.contains(r.commonAncestorContainer)){ed.focus();r=document.createRange();r.selectNodeContents(ed);r.collapse(false);sel.removeAllRanges();sel.addRange(r);}
+  if(r.collapsed&&r.startContainer===ed){              /* 光标落在段落之间：移进相邻段落 */
+    let blk=ed.childNodes[r.startOffset-1],atEnd=true;
+    if(!blk){blk=ed.childNodes[r.startOffset];atEnd=false;}
+    if(!blk){blk=document.createElement("p");blk.appendChild(document.createElement("br"));ed.appendChild(blk);}
+    if(blk.nodeType===1&&!/^(UL|OL|TABLE|PRE|HR)$/.test(blk.tagName)){r=document.createRange();r.selectNodeContents(blk);r.collapse(!atEnd);sel.removeAllRanges();sel.addRange(r);}
+  }
+  return r;
+}
+function setCaret(node,off){const r=document.createRange();r.setStart(node,off);r.collapse(true);const s=getSelection();s.removeAllRanges();s.addRange(r);}
+function fmtsAt(node){const ed=rteEl(),out=new Set();for(let n=node;n&&n!==ed;n=n.parentNode){if(n.nodeType!==1)continue;for(const k in FMT_SEL)if(n.matches(FMT_SEL[k]))out.add(k);}return out;}
+function closestFmt(node,k){const ed=rteEl();for(let n=node;n&&n!==ed;n=n.parentNode)if(n.nodeType===1&&n.matches(FMT_SEL[k]))return n;return null;}
+function fmtEl(k){if(k==="y"||k==="r"){const m=document.createElement("mark");m.className=k;return m;}return document.createElement(k);}
+/* 光标处补上当前开启的格式：插入带零宽字符的格式元素，之后输入（包括输入法）都落在里面 */
+function ensureCaretFmt(){
+  const r=rteRange();if(!r||!r.collapsed)return;
+  const have=fmtsAt(r.startContainer);
+  ["y","r"].forEach(k=>{if(have.has(k)&&state.fmtOn.has(k==="y"?"r":"y")){exitFmt(k);have.delete(k);}});
+  const need=[...state.fmtOn].filter(k=>k!=="h"&&!have.has(k));if(!need.length)return;
+  const r2=rteRange();let outer=null,inner=null;
+  need.forEach(k=>{const e=fmtEl(k);if(inner)inner.appendChild(e);else outer=e;inner=e;});
+  const z=document.createTextNode("\u200B");inner.appendChild(z);r2.insertNode(outer);setCaret(z,1);
+}
+/* 关闭某个格式：在光标处把该格式元素拆开，光标移到它外面 */
+function exitFmt(k){
+  const r=rteRange();if(!r||!r.collapsed)return;
+  const el=closestFmt(r.startContainer,k);if(!el)return;
+  const tail=document.createRange();tail.setStart(r.startContainer,r.startOffset);tail.setEnd(el,el.childNodes.length);
+  const after=el.cloneNode(false);after.appendChild(tail.extractContents());
+  el.after(after);if(!after.textContent.replace(/\u200B/g,""))after.remove();
+  const z=document.createTextNode("\u200B");el.after(z);
+  if(!el.textContent.replace(/\u200B/g,""))el.remove();
+  setCaret(z,1);
+}
+/* 选中文字时的黄/红高亮：交给浏览器拆分合并，再统一换回 <mark> */
+function textOffsets(ed,r){const pre=document.createRange();pre.selectNodeContents(ed);pre.setEnd(r.startContainer,r.startOffset);const a=pre.toString().length;return [a,a+r.toString().length];}
+function restoreOffsets(ed,a,b){
+  const it=document.createTreeWalker(ed,NodeFilter.SHOW_TEXT);let n,pos=0,r=document.createRange(),sa=false;
+  while((n=it.nextNode())){const L=n.nodeValue.length;
+    if(!sa&&a<pos+L){r.setStart(n,a-pos);sa=true;}
+    if(sa&&b<=pos+L){r.setEnd(n,b-pos);break;}pos+=L;}
+  const s=getSelection();s.removeAllRanges();s.addRange(r);
+}
+function highlightSel(k){
+  const ed=rteEl(),r=rteRange();const [a,b]=textOffsets(ed,r);
+  let all=true;const it=document.createTreeWalker(ed,NodeFilter.SHOW_TEXT);let n;
+  while((n=it.nextNode())){
+    if(!r.intersectsNode(n)||(n===r.startContainer&&r.startOffset>=n.length)||(n===r.endContainer&&r.endOffset===0))continue;
+    if(!n.nodeValue.replace(/\u200B/g,"").trim())continue;if(!closestFmt(n,k)){all=false;break;}}
+  ed.querySelectorAll("mark.y,mark.r").forEach(m=>{const sp=document.createElement("span");sp.style.backgroundColor=HL_COLOR[m.className];while(m.firstChild)sp.appendChild(m.firstChild);m.replaceWith(sp);});
+  restoreOffsets(ed,a,b);
+  document.execCommand("styleWithCSS",false,true);
+  document.execCommand("hiliteColor",false,all?"transparent":HL_COLOR[k]);
+  document.execCommand("styleWithCSS",false,false);
+  const [a2,b2]=textOffsets(ed,rteRange());
+  ed.querySelectorAll("[style]").forEach(el=>{
+    const bg=el.style.backgroundColor,k2=Object.keys(HL_COLOR).find(x=>HL_COLOR[x]===bg);el.style.backgroundColor="";
+    if(!el.getAttribute("style"))el.removeAttribute("style");
+    if(k2){const m=fmtEl(k2);if(el.tagName==="SPAN"&&!el.attributes.length){while(el.firstChild)m.appendChild(el.firstChild);el.replaceWith(m);}else{while(el.firstChild)m.appendChild(el.firstChild);el.appendChild(m);}}
+    else if(el.tagName==="SPAN"&&!el.attributes.length)el.replaceWith(...el.childNodes);
+  });
+  ed.normalize();restoreOffsets(ed,a2,b2);
+}
+function kbFmt(k){
+  const ed=rteEl();if(!ed)return;
+  if(k==="note"){addNoteAtCaret();return;}
+  const r=rteRange();
+  if(!r.collapsed){                                   /* 选中文字：只作用于选中部分 */
+    if(k==="h"){const cur=String(document.queryCommandValue("formatBlock")).toLowerCase();document.execCommand("formatBlock",false,cur==="h2"?"<p>":"<h2>");}
+    else if(k==="y"||k==="r")highlightSel(k);
+    else{document.execCommand("styleWithCSS",false,false);document.execCommand({b:"bold",i:"italic",u:"underline"}[k]);}
+  }else{                                              /* 未选中：开关持续格式 */
+    if(k==="h"){const on=!state.fmtOn.has("h");on?state.fmtOn.add("h"):state.fmtOn.delete("h");document.execCommand("formatBlock",false,on?"<h2>":"<p>");}
+    else if(state.fmtOn.has(k)){state.fmtOn.delete(k);exitFmt(k);ensureCaretFmt();}
+    else{const o=k==="y"?"r":k==="r"?"y":null;if(o&&state.fmtOn.has(o)){state.fmtOn.delete(o);exitFmt(o);}state.fmtOn.add(k);ensureCaretFmt();}
+  }
+  updateTb();syncNotesOrder();scheduleLines();
+}
+function updateTb(){document.querySelectorAll("#kbTb [data-fmt]").forEach(b=>b.classList.toggle("on",state.fmtOn.has(b.dataset.fmt)));}
+function addNoteAtCaret(){
+  const r=rteRange();r.collapse(false);
+  const id="nt"+uid(),a=document.createElement("span");a.className="na";a.dataset.nid=id;a.contentEditable="false";
+  r.insertNode(a);const z=document.createTextNode("\u200B");a.after(z);setCaret(z,1);
+  state.fileBuf.notes.push({id,text:""});syncNotesOrder(true);
+  const t=document.querySelector('textarea[data-note-id="'+id+'"]');if(t)t.focus();
+  scheduleLines();
+}
+/* 便签顺序跟随正文锚点顺序 */
+function syncNotesOrder(force){
+  const ed=rteEl(),b=state.fileBuf;if(!ed||!b)return;
+  captureNotes();
+  const order=[...ed.querySelectorAll("[data-nid]")].map(a=>a.dataset.nid);
+  const rank=n=>{const i=order.indexOf(n.id);return i<0?1e9:i;};
+  const before=b.notes.map(n=>n.id).join();b.notes.sort((x,y)=>rank(x)-rank(y));
+  if(force||before!==b.notes.map(n=>n.id).join()){const box=document.querySelector(".kb-notes");if(box){box.innerHTML=notesEditHTML();box.querySelectorAll("textarea").forEach(autoSize);}}
+}
+function captureNotes(){if(!state.fileBuf)return;document.querySelectorAll("textarea[data-note-id]").forEach(t=>{const n=state.fileBuf.notes.find(x=>x.id===t.dataset.noteId);if(n)n.text=t.value;});}
+function autoSize(t){t.style.height="auto";t.style.height=t.scrollHeight+"px";}
+
+/* ---------- 便签连线：锚点文字底部向右延伸，折到右侧对应便签 ---------- */
+let _lnRaf=0;
+function scheduleLines(){if(_lnRaf)return;_lnRaf=requestAnimationFrame(()=>{_lnRaf=0;drawNoteLines();});}
+function drawNoteLines(){
+  let svg=document.getElementById("noteLines");
+  const main=document.querySelector(".kb-main"),aside=document.querySelector(".kb-notes");
+  const clear=()=>{if(svg)svg.innerHTML="";};
+  if(state.view!=="kb"||!main||!aside)return clear();
+  const mr=main.getBoundingClientRect(),ar=aside.getBoundingClientRect();
+  if(ar.left<mr.right||!ar.width)return clear();      /* 便签栏不在右侧（窄屏）时不画 */
+  if(!svg){svg=document.createElementNS("http://www.w3.org/2000/svg","svg");svg.id="noteLines";document.body.appendChild(svg);}
+  const sc=document.querySelector("main").getBoundingClientRect();
+  const top=Math.max(0,sc.top,mr.top),bot=Math.min(innerHeight,sc.bottom,mr.bottom);
+  const ed=!!(state.editingFile&&rteEl());
+  let d="";
+  main.querySelectorAll(ed?"#fe-body [data-nid]":".md [data-n]").forEach(a=>{
+    const key=ed?a.dataset.nid:a.dataset.n;
+    const note=aside.querySelector(ed?'.sticky[data-nid="'+key+'"]':"#note-"+key);if(!note)return;
+    const rc=a.getClientRects()[0]||a.getBoundingClientRect();
+    const ax=Math.round(rc.left)+.5,ay=Math.round(rc.bottom)+1;
+    if(ay<top||ay>bot)return;
+    const nr=note.getBoundingClientRect();
+    const ny=Math.round(Math.min(Math.max(nr.top+16,ar.top+8),ar.bottom-8)),nx=Math.round(nr.left);
+    const mx=Math.round(mr.right+(nx-mr.right)/2);
+    d+="M"+ax+" "+ay+"H"+mx+"V"+ny+"H"+nx;
+  });
+  svg.innerHTML=d?'<path d="'+d+'"/>':"";
+}
+addEventListener("resize",scheduleLines);
+document.addEventListener("scroll",scheduleLines,true);
+document.addEventListener("load",scheduleLines,true);
+document.addEventListener("transitionend",scheduleLines,true);
+if(window.ResizeObserver)new ResizeObserver(scheduleLines).observe(document.body);
+
+/* 编辑器事件 */
+document.addEventListener("mousedown",e=>{const b=e.target.closest("#kbTb [data-fmt]");if(!b)return;e.preventDefault();kbFmt(b.dataset.fmt);});
+document.addEventListener("keydown",e=>{
+  if(!e.target.closest||!e.target.closest("#fe-body"))return;
+  if((e.ctrlKey||e.metaKey)&&!e.altKey&&/^[biu]$/i.test(e.key)){e.preventDefault();kbFmt(e.key.toLowerCase());return;}
+  if(e.ctrlKey||e.metaKey||e.altKey)return;
+  if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing&&state.fmtOn.has("h")){e.preventDefault();document.execCommand("insertParagraph");document.execCommand("formatBlock",false,"<h2>");return;}
+  if((e.key.length===1||e.key==="Process"||e.key==="Unidentified")&&[...state.fmtOn].some(k=>k!=="h"))ensureCaretFmt();
+});
+document.addEventListener("paste",e=>{
+  if(!e.target.closest||!e.target.closest("#fe-body"))return;
+  e.preventDefault();document.execCommand("insertText",false,(e.clipboardData||window.clipboardData).getData("text/plain"));
+});
+document.addEventListener("input",e=>{
+  const t=e.target;
+  if(t.matches&&t.matches("textarea[data-note-id]")){const n=state.fileBuf&&state.fileBuf.notes.find(x=>x.id===t.dataset.noteId);if(n)n.text=t.value;autoSize(t);scheduleLines();return;}
+  if(t.id==="fe-body"){
+    syncNotesOrder();scheduleLines();
+  }
+});
 function renderKB(){
+  if(state.editingFile&&rteEl())captureFileBuf();
   _hl=0;
   if(!state.kbSel||!locate(state.kbSel))state.kbSel=firstFile();
   const loc=state.kbSel?locate(state.kbSel):null;
   const node=loc?loc.node:null;const em=state.editMode;
   const tools=em?'<div class="tree-tools"><button data-action="kb-newfolder">＋文件夹</button><button data-action="kb-newfile">＋文件</button><button data-action="kb-import">导入</button></div>':'';
   let mid;
-  if(!node){mid='<div class="empty">'+(DATA.kb.length?'选择左侧的一篇文档':'知识库还是空的')+(em?'<br><span style="font-size:13px">用左侧的“＋文件夹 / ＋文件 / 导入”开始建立。</span>':'')+'</div>';}
+  if(!node){mid='<div class="empty">'+(DATA.kb.length?'选择左侧的一篇文档':'知识库还是空的')+'</div>';}
   else if(state.editingFile&&node.type==="file"){mid=fileEditorHTML(node);}
   else if(node.type==="file"){
     const crumb=loc.trail.map(t=>esc(t.name)).join('<span class="dot">/</span>');
@@ -868,7 +1134,7 @@ function renderKB(){
       +'<button class="btn sm soft" data-action="kb-download" data-id="'+node.id+'">下载</button>'
       +'<button class="btn sm danger" data-action="kb-delete" data-id="'+node.id+'">删除</button></div>':'';
     mid='<div class="crumb">'+crumb+(node.hidden?' · <span class="hbadge">已隐藏</span>':'')+'</div><h1 class="doc">'+esc(node.name)+'</h1>'
-      +'<div class="doc-meta">'+(node.tags||[]).map(t=>'<span class="t">'+esc(t)+'</span>').join("")+'</div>'+dtools+'<div class="md">'+md(node.body)+'</div>';
+      +'<div class="doc-meta">'+(node.tags||[]).map(t=>'<span class="t">'+esc(t)+'</span>').join("")+'</div>'+dtools+'<div class="md">'+viewDoc(node).html+'</div>';
   } else {
     const crumb=loc.trail.map(t=>esc(t.name)).join('<span class="dot">/</span>');
     const kids=(node.children||[]).filter(n=>em||!n.hidden);
@@ -879,13 +1145,16 @@ function renderKB(){
     mid='<div class="crumb">'+(crumb||'知识库')+'</div><h1 class="doc">'+esc(node.name)+'</h1><div class="doc-meta">'+kids.length+' 项</div>'+dtools
       +'<ul class="folder-list">'+(kids.length?kids.map(c=>'<li data-action="'+(c.type==="folder"?"kb-folder":"kb-open")+'" data-id="'+c.id+'"><span class="ic">'+(c.type==="folder"?'文件夹':'文档')+'</span><span>'+esc(c.name)+'</span>'+(c.hidden?' <span class="hbadge">隐藏</span>':'')+'</li>').join(""):'<li style="cursor:default;color:var(--text-dim)">空文件夹</li>')+'</ul>';
   }
-  const notes=(node&&node.type==="file"&&node.notes)||[];
-  const notesHTML=notes.length?notes.map((nt,idx)=>'<div class="sticky" id="note-'+(idx+1)+'" data-action="kb-note" data-n="'+(idx+1)+'"><span class="n">'+(idx+1)+'</span>'+esc(nt.text)+'</div>').join(""):'<div class="hint">这篇没有便签。'+(em?'<br>编辑文档时在下方“便签”里添加，会对应正文的 ==高亮==。':'')+'</div>';
+  const editing=state.editingFile&&node&&node.type==="file";
+  const notes=node&&node.type==="file"?viewDoc(node).notes:[];
+  const notesHTML=editing?notesEditHTML():'<div class="ph-title">NOTES</div>'+notes.map((nt,idx)=>'<div class="sticky" id="note-'+(idx+1)+'" data-action="kb-note" data-n="'+(idx+1)+'"><span class="n">'+(idx+1)+'</span>'+esc(nt)+'</div>').join("");
   app.innerHTML='<div class="kb"><aside class="panel kb-tree"><div class="ph-title">DIRECTORY</div>'+tools+treeHTML(DATA.kb,0)+'</aside>'
     +'<section class="panel kb-main">'+mid+'</section>'
-    +'<aside class="panel kb-notes"><div class="ph-title">NOTES</div>'+notesHTML+'</aside>'
+    +'<aside class="panel kb-notes">'+notesHTML+'</aside>'
     +'<aside class="rail"><div class="rail-scroll">'+railContribHTML()+'</div></aside></div>';
   hydrateContrib();
+  if(editing){document.execCommand("defaultParagraphSeparator",false,"p");document.querySelectorAll(".kb-notes textarea").forEach(autoSize);updateTb();}
+  scheduleLines();
 }
 
 /* B站接口不允许跨域，但支持 JSONP —— 用 <script> 取封面和标题 */
@@ -925,10 +1194,10 @@ function renderFav(){
       return '<div class="fcard'+(it.hidden?' hidden-item':'')+'"><div class="cover" data-action="fav-open" data-i="'+i+'">'+((it.cover||s.thumb)?'<img src="'+esc(it.cover||s.thumb)+'" alt="" referrerpolicy="no-referrer" onerror="this.style.display=\'none\'">':s.icon)+'<span class="src">'+esc(s.src)+'</span>'+'</div>'
         +'<div class="info" data-action="fav-open" data-i="'+i+'" style="cursor:pointer"><div class="t">'+esc(it.title)+'</div><div class="u">'+esc(it.url.replace(/^https?:\/\//,''))+'</div></div>'
         +(em?'<div class="fedit"><button class="mini" data-action="fav-item-hide" data-i="'+i+'">'+(it.hidden?'取消隐藏':'隐藏')+'</button><button class="mini danger" data-action="fav-item-del" data-i="'+i+'">删除</button></div>':'')+'</div>';
-    }).join("")+'</div>':'<div class="empty">这个收藏夹还是空的'+(em?'，点右上角＋添加。':'。')+'</div>';
+    }).join("")+'</div>':'<div class="empty">这个收藏夹还是空的</div>';
   if(!DATA.fav.length){app.innerHTML='<div class="fav"><aside class="panel fav-side">'+sideHTML()+'</aside><section>'
     +'<div class="fav-main-head"><h1>收藏</h1><div class="spacer" style="flex:1"></div>'+(em?'<button class="btn" data-action="fav-add-open">＋ 收藏网页/视频</button>':'')+'</div>'
-    +'<div class="empty">还没有收藏'+(em?'<br><span style="font-size:13px">点右上角新建收藏夹或直接收藏一个链接。</span>':'。')+'</div></section><aside class="rail"><div class="rail-scroll">'+railContactsHTML()+'</div></aside></div>';return;}
+    +'<div class="empty">还没有收藏</div></section><aside class="rail"><div class="rail-scroll">'+railContactsHTML()+'</div></aside></div>';return;}
   const head='<div class="fav-main-head"><h1>'+esc(cur.name)+'</h1><span style="color:var(--text-dim);font-size:13px">'+(cur.items||[]).length+' 项</span><div class="spacer" style="flex:1"></div>'
     +(em?'<button class="btn sm soft" data-action="fav-folder-rename" data-i="'+state.favFolder+'">重命名</button><button class="btn sm soft" data-action="fav-folder-hide" data-i="'+state.favFolder+'">'+(cur.hidden?'取消隐藏':'隐藏')+'</button><button class="btn sm danger" data-action="fav-folder-del" data-i="'+state.favFolder+'">删除夹</button>':'')
     +'<button class="btn" data-action="fav-add-open">＋ 收藏网页/视频</button></div>';
@@ -936,7 +1205,7 @@ function renderFav(){
 }
 
 function captureComposer(){const t=$("#composerText");if(t)state.composerText=t.value;const g=$("#composerImg");if(g)state.composerImgText=g.value;}
-function captureFileBuf(){if(!state.fileBuf)return;const nm=$("#fe-name"),tg=$("#fe-tags"),bd=$("#fe-body");if(nm)state.fileBuf.name=nm.value;if(tg)state.fileBuf.tags=tg.value.split(/[,，]/).map(s=>s.trim()).filter(Boolean);if(bd)state.fileBuf.body=bd.value;document.querySelectorAll("[data-note]").forEach(el=>{const i=+el.dataset.note;if(state.fileBuf.notes[i])state.fileBuf.notes[i].text=el.value;});}
+function captureFileBuf(){if(!state.fileBuf)return;const nm=$("#fe-name"),tg=$("#fe-tags"),bd=$("#fe-body");if(nm)state.fileBuf.name=nm.value;if(tg)state.fileBuf.tags=tg.value.split(/[,，]/).map(s=>s.trim()).filter(Boolean);if(bd)state.fileBuf.html=bd.innerHTML;captureNotes();}
 
 function toB64(str){const bytes=new TextEncoder().encode(str);let bin="";const ch=0x8000;for(let i=0;i<bytes.length;i+=ch)bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+ch));return btoa(bin);}
 async function publish(){
@@ -952,7 +1221,7 @@ async function publish(){
     const put=await fetch(base,{method:"PUT",headers:Object.assign({"Content-Type":"application/json"},headers),body:JSON.stringify(body)});
     if(put.ok){clearDraft();toast("已发布，网站约 1 分钟后更新");}
     else{const e=await put.json().catch(()=>({}));toast("发布失败："+(e.message||put.status));}
-  }catch(e){toast("发布出错（检查网络/代理）："+e.message);}
+  }catch(e){toast("发布出错："+e.message);}
 }
 function exportData(){return {version:1,profile:DATA.profile,feed:DATA.feed,kb:DATA.kb,fav:DATA.fav,photos:DATA.photos||[],contacts:DATA.contacts||[]};}
 function doExport(){const blob=new Blob([JSON.stringify(exportData(),null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="data.json";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);toast("已导出 data.json");}
@@ -966,24 +1235,24 @@ function openSettings(){
     +'<div class="field"><label>仓库名 repo</label><input name="repo" value="'+esc(c.repo)+'"></div>'
     +'<div class="field"><label>分支 branch</label><input name="branch" value="'+esc(c.branch)+'"></div>'
     +'<div class="field"><label>文件路径 path</label><input name="path" value="'+esc(c.path)+'"></div>'
-    +'<div class="field"><label>GitHub 令牌 Token</label><input name="token" type="password" placeholder="'+(c.token?'已保存（留空则不改）':'ghp_ 或 github_pat_…')+'"></div>'
+    +'<div class="field"><label>GitHub 令牌 Token</label><input name="token" type="password" placeholder="'+(c.token?'已保存':'ghp_ 或 github_pat_…')+'"></div>'
     +'<p class="sub" style="margin:0">创建：GitHub → Settings → Developer settings → Fine-grained tokens → 选中本仓库 → Repository permissions → Contents: Read and write。</p>'
     +'<div class="modal-actions"><button type="button" class="btn ghost" data-action="modal-close">取消</button>'+(c.token?'<button type="button" class="btn soft danger" data-action="gh-clear">清除令牌</button>':'')+'<button type="submit" class="btn">保存</button></div></form>');
   bg.querySelector("#ghForm").addEventListener("submit",e=>{e.preventDefault();const fd=new FormData(e.target);const cfg=ghCfg();const nc={owner:fd.get("owner").trim(),repo:fd.get("repo").trim(),branch:fd.get("branch").trim()||"main",path:fd.get("path").trim()||"data.json",token:fd.get("token")||cfg.token};localStorage.setItem(KEY_GH,JSON.stringify(nc));bg.remove();toast("已保存设置");});
 }
 function openProfile(){
   const p=DATA.profile||{name:"我",avatar:""};
-  const bg=modal('<h3>个人资料</h3><p class="sub">头像可用一个 emoji，或粘贴一张图片的网址；昵称会显示在每条动态上。改完记得点“发布”。</p><form id="pf">'
+  const bg=modal('<h3>个人资料</h3><form id="pf">'
     +'<div class="field"><label>昵称</label><input name="name" value="'+esc(p.name||"")+'"></div>'
     +'<div class="field"><label>头像（图片路径或网址）</label><input name="avatar" value="'+esc(p.avatar||"")+'" placeholder="assets/avatar.jpg 或 https://…"></div>'
     +'<div class="modal-actions"><button type="button" class="btn ghost" data-action="modal-close">取消</button><button type="submit" class="btn">保存</button></div></form>');
   bg.querySelector("#pf").addEventListener("submit",e=>{e.preventDefault();const fd=new FormData(e.target);DATA.profile={name:(fd.get("name")||"我").trim()||"我",avatar:(fd.get("avatar")||"").trim()};saveDraft();bg.remove();render();toast("已更新资料");});
 }
 function openAddFav(){
-  const bg=modal('<h3>收藏一个网页 / 视频</h3><p class="sub">粘贴链接即可，YouTube、Bilibili 会自动识别并可内嵌播放。</p><form id="addForm">'
+  const bg=modal('<h3>收藏一个网页 / 视频</h3><form id="addForm">'
     +'<div class="field"><label>链接 URL</label><input name="url" required placeholder="https://…" autocomplete="off"></div>'
     +'<div class="field"><label>标题</label><input name="title" placeholder="留空则用链接作标题" autocomplete="off"></div>'
-    +'<div class="field"><label>封面图片（可留空）</label><input name="cover" placeholder="YouTube / B站会自动获取；也可粘贴图片地址" autocomplete="off"></div>'
+    +'<div class="field"><label>封面图片</label><input name="cover" placeholder="图片地址" autocomplete="off"></div>'
     +'<div class="field"><label>收藏到</label><select name="folder">'+DATA.fav.map((f,i)=>'<option value="'+i+'"'+(i===state.favFolder?' selected':'')+'>'+esc(f.name)+'</option>').join("")+'<option value="__new__">＋ 新建收藏夹…</option></select></div>'
     +'<div class="field" id="nfw" style="display:none"><label>新收藏夹名称</label><input name="newFolder" placeholder="例如：教程"></div>'
     +'<div class="modal-actions"><button type="button" class="btn ghost" data-action="modal-close">取消</button><button type="submit" class="btn">收藏</button></div></form>');
@@ -1007,7 +1276,7 @@ function openAddFav(){
 function openMove(id){
   const loc=locate(id);if(!loc)return;
   const folders=collectFolders(id);
-  const opts='<button data-action="move-pick" data-target="root">（根目录）</button>'+folders.map(f=>'<button data-action="move-pick" data-target="'+f.id+'">'+'&nbsp;'.repeat(f.depth*2)+esc(f.name)+'</button>').join("");
+  const opts='<button data-action="move-pick" data-target="root">根目录</button>'+folders.map(f=>'<button data-action="move-pick" data-target="'+f.id+'">'+'&nbsp;'.repeat(f.depth*2)+esc(f.name)+'</button>').join("");
   state.moving=id;
   modal('<h3>移动到…</h3><p class="sub">把「'+esc(loc.node.name)+'」移动到哪个文件夹？</p><div class="picklist">'+opts+'</div><div class="modal-actions"><button class="btn ghost" data-action="modal-close">取消</button></div>');
 }
@@ -1040,7 +1309,7 @@ document.addEventListener("click",e=>{
 
     case "feed-like":{store.likes[id]=!store.likes[id];saveStore();el.classList.toggle("liked",store.likes[id]);el.querySelector("span").textContent=likeCount(id)||"赞";if(store.likes[id]){el.classList.add("pop");setTimeout(()=>el.classList.remove("pop"),300);}return;}
     case "feed-open":if(state.editMode&&state.editingPost)return;state.feedOpen=id;render();window.scrollTo(0,0);return;
-    case "post-new":{const t=$("#composerText").value.trim();if(!t){toast("写点什么再发");return;}const imgs=state.composerImgs.concat(readImgInput("composerImg"));DATA.feed.unshift({id:uid(),date:now(),text:t,images:imgs.length?imgs:undefined});state.composerText="";state.composerImgText="";state.composerImgs=[];saveDraft();renderFeed();toast("已发布到本地，记得点上方“发布”同步线上");return;}
+    case "post-new":{const t=$("#composerText").value.trim();if(!t){toast("写点什么再发");return;}const imgs=state.composerImgs.concat(readImgInput("composerImg"));DATA.feed.unshift({id:uid(),date:now(),text:t,images:imgs.length?imgs:undefined});state.composerText="";state.composerImgText="";state.composerImgs=[];saveDraft();renderFeed();toast("已发布到本地");return;}
     case "post-edit":{captureComposer();const p=DATA.feed.find(x=>x.id===id);state.editingPost=id;state.imgBuf=(p&&p.images||[]).slice();renderFeed();return;}
     case "cmt-like":{const cid=el.dataset.cid;store.cmtLikes[cid]=!store.cmtLikes[cid];saveStore();
       const c=(store.cmts[id]||[]).find(x=>x.id===cid);const n=((c&&c.likes)||0)+(store.cmtLikes[cid]?1:0);
@@ -1064,19 +1333,27 @@ document.addEventListener("click",e=>{
     case "kb-hl":flashPair("note-"+el.dataset.n,"hl-"+el.dataset.n);return;
     case "kb-note":flashPair("hl-"+el.dataset.n,"note-"+el.dataset.n);return;
     case "kb-newfolder":{const nm=prompt("新文件夹名称：","新文件夹");if(nm){const n={id:uid(),type:"folder",name:nm.trim()||"新文件夹",children:[]};targetChildren().push(n);state.kbSel=n.id;state.expanded.add(n.id);saveDraft();renderKB();}return;}
-    case "kb-newfile":{const nm=prompt("新文件名称：","新文件");if(nm){const n={id:uid(),type:"file",name:nm.trim()||"新文件",tags:[],body:"",notes:[]};targetChildren().push(n);state.kbSel=n.id;state.editingFile=true;state.fileBuf={name:n.name,tags:[],body:"",notes:[]};saveDraft();renderKB();}return;}
+    case "kb-newfile":{const nm=prompt("新文件名称：","新文件");if(nm){const n={id:uid(),type:"file",fmt:"html",name:nm.trim()||"新文件",tags:[],body:"",notes:[]};targetChildren().push(n);state.kbSel=n.id;state.editingFile=true;state.fmtOn=new Set();state.fileBuf={name:n.name,tags:[],html:"",notes:[]};saveDraft();renderKB();}return;}
     case "kb-import":$("#importInput").click();return;
     case "kb-rename":{const l=locate(id);if(l){const nm=prompt("重命名：",l.node.name);if(nm){l.node.name=nm.trim()||l.node.name;saveDraft();renderKB();}}return;}
     case "kb-move":openMove(id);return;
     case "move-pick":{if(state.moving){moveNode(state.moving,el.dataset.target);state.kbSel=state.moving;state.moving=null;saveDraft();closeModals();renderKB();toast("已移动");}return;}
     case "kb-hide":{const l=locate(id);if(l){l.node.hidden=!l.node.hidden;saveDraft();renderKB();}return;}
-    case "kb-download":{const l=locate(id);if(l&&l.node.type==="file"){const blob=new Blob([l.node.body||""],{type:"text/markdown"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=(l.node.name||"文档")+".md";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);toast("已下载");}return;}
+    case "kb-download":{const l=locate(id);if(l&&l.node.type==="file"){const blob=new Blob([isHtmlDoc(l.node)?htmlToMd(l.node.body):(l.node.body||"")],{type:"text/markdown"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=(l.node.name||"文档")+".md";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);toast("已下载");}return;}
     case "kb-delete":{const l=locate(id);if(l&&confirm("删除「"+l.node.name+"」"+(l.node.type==="folder"?"及其全部内容":"")+"？")){l.parent.splice(l.index,1);state.kbSel=firstFile();state.editingFile=false;saveDraft();renderKB();}return;}
-    case "kb-edit":{const l=locate(id);if(l){state.editingFile=true;state.fileBuf={name:l.node.name,tags:(l.node.tags||[]).slice(),body:l.node.body||"",notes:(l.node.notes||[]).map(n=>({text:n.text}))};renderKB();}return;}
-    case "kbedit-note-add":captureFileBuf();state.fileBuf.notes.push({text:""});renderKB();return;
-    case "kbedit-note-del":captureFileBuf();state.fileBuf.notes.splice(+el.dataset.i,1);renderKB();return;
+    case "kb-edit":{const l=locate(id);if(l){const n=l.node;
+      const d=isHtmlDoc(n)?{html:n.body||"",notes:(n.notes||[]).map(x=>({id:x.id||"nt"+uid(),text:x.text||""}))}:mdToEditor(n);
+      state.editingFile=true;state.fmtOn=new Set();state.fileBuf={name:n.name,tags:(n.tags||[]).slice(),html:d.html,notes:d.notes};renderKB();}return;}
+    case "kbedit-note-del":{const nid=el.dataset.nid;captureNotes();state.fileBuf.notes=state.fileBuf.notes.filter(x=>x.id!==nid);
+      const a=rteEl()&&rteEl().querySelector('[data-nid="'+nid+'"]');if(a){if(a.tagName==="SPAN")a.remove();else a.replaceWith(...a.childNodes);}
+      syncNotesOrder(true);scheduleLines();return;}
     case "kbedit-cancel":state.editingFile=false;state.fileBuf=null;renderKB();return;
-    case "kbedit-save":{captureFileBuf();const l=locate(id);if(l){l.node.name=state.fileBuf.name.trim()||l.node.name;l.node.tags=state.fileBuf.tags;l.node.body=state.fileBuf.body;l.node.notes=state.fileBuf.notes.filter(n=>(n.text||"").trim());}state.editingFile=false;state.fileBuf=null;saveDraft();renderKB();toast("已保存");return;}
+    case "kbedit-save":{captureFileBuf();const l=locate(id);if(l){const b=state.fileBuf;
+      const keep=new Set(b.notes.filter(n=>(n.text||"").trim()).map(n=>n.id));
+      const html=cleanDocHTML(b.html,keep),order=[...tpl(html).content.querySelectorAll("[data-nid]")].map(a=>a.dataset.nid);
+      const rank=n=>{const i=order.indexOf(n.id);return i<0?1e9:i;};
+      l.node.name=b.name.trim()||l.node.name;l.node.tags=b.tags;l.node.fmt="html";l.node.body=html;
+      l.node.notes=b.notes.filter(n=>keep.has(n.id)).sort((x,y)=>rank(x)-rank(y)).map(n=>({id:n.id,text:n.text.trim()}));}state.editingFile=false;state.fileBuf=null;saveDraft();renderKB();toast("已保存");return;}
 
     case "fav-folder":state.favFolder=+el.dataset.i;state.favItem=null;renderFav();return;
     case "fav-open":state.favItem=+el.dataset.i;renderFav();window.scrollTo(0,0);return;
@@ -1109,7 +1386,7 @@ $("#postImgInput").addEventListener("change",async e=>{
     if(!/^image\//.test(f.type))continue;
     try{(state.imgTarget==="c"?state.composerImgs:state.imgBuf).push(await compressImg(f));}catch(err){toast("跳过一张："+err.message);}
   }
-  renderFeed();toast("已添加，点“发布到线上”时会自动上传到 GitHub");
+  renderFeed();toast("已添加");
 });
 
 $("#photoInput").addEventListener("change",async e=>{
@@ -1248,7 +1525,7 @@ async function hydrateContrib(){
     const days=await fetchContrib(false);
     if($("#cgBox"))$("#cgBox").innerHTML=contribGridHTML(days);
   }catch(e){
-    if(!cached&&$("#cgBox"))$("#cgBox").innerHTML='<div class="rail-note">暂时取不到修改记录<br>（需要能访问 GitHub 的网络）</div>';
+    if(!cached&&$("#cgBox"))$("#cgBox").innerHTML='<div class="rail-note">暂时取不到修改记录</div>';
   }
 }
 
@@ -1288,12 +1565,12 @@ function railContactsHTML(){
 function openContacts(){
   const list=(DATA.contacts||[]).map((c,i)=>'<div class="field" style="border:1px solid var(--line);padding:12px;margin-bottom:10px">'
     +'<input data-c="label" data-i="'+i+'" value="'+esc(c.label)+'" placeholder="名称，如 bilibili" style="margin-bottom:7px">'
-    +'<input data-c="value" data-i="'+i+'" value="'+esc(c.value||"")+'" placeholder="显示内容 / 账号（微信填微信号）" style="margin-bottom:7px">'
+    +'<input data-c="value" data-i="'+i+'" value="'+esc(c.value||"")+'" placeholder="显示内容 / 账号" style="margin-bottom:7px">'
     +'<input data-c="url" data-i="'+i+'" value="'+esc(c.url||"")+'" placeholder="链接（可留空，留空则点击复制上面的账号）" style="margin-bottom:7px">'
-    +'<input data-c="icon" data-i="'+i+'" value="'+esc(c.icon||"")+'" placeholder="图标图片路径（留空用内置图标）" style="margin-bottom:7px">'
-    +'<input data-c="qr" data-i="'+i+'" value="'+esc(c.qr||"")+'" placeholder="二维码图片路径，如 assets/wechat-qr.png（填了则点击显示二维码）" style="margin-bottom:7px">'
+    +'<input data-c="icon" data-i="'+i+'" value="'+esc(c.icon||"")+'" placeholder="图标图片路径" style="margin-bottom:7px">'
+    +'<input data-c="qr" data-i="'+i+'" value="'+esc(c.qr||"")+'" placeholder="二维码图片路径" style="margin-bottom:7px">'
     +'<button type="button" class="mini danger" data-action="contact-del" data-i="'+i+'">删除这条</button></div>').join("");
-  const bg=modal('<h3>联系方式</h3><p class="sub">有链接的会跳转（bilibili / 抖音 / 小红书 / ins），没链接的点击复制账号（适合微信）。</p>'
+  const bg=modal('<h3>联系方式</h3>'
     +'<div id="cList">'+(list||'<div class="rail-note" style="margin-bottom:10px">还没有条目</div>')+'</div>'
     +'<button type="button" class="mini" data-action="contact-add">＋ 添加一条</button>'
     +'<div class="modal-actions"><button type="button" class="btn ghost" data-action="modal-close">取消</button>'
@@ -1479,6 +1756,7 @@ function render(){
   moveHLine();
 
   if(state.view==="feed")renderFeed();else if(state.view==="kb")renderKB();else renderFav();
+  scheduleLines();
   syncToolbarH();
 }
 async function boot(){
@@ -1487,7 +1765,7 @@ async function boot(){
   if(ownerUnlocked&&hasDraft()){
     try{const d=JSON.parse(localStorage.getItem(KEY_DRAFT));
       if(d&&d.feed){DATA=d;dirty=true;
-        setTimeout(()=>toast("已恢复未发布的草稿 — 记得点“发布到线上”"),700);}
+        setTimeout(()=>toast("已恢复未发布的草稿"),700);}
     }catch(e){}
   }
   ensureIds();
