@@ -3,7 +3,7 @@
    ------------------------------------------------------------
    · 线稿砖块风格：白天白立面 + 细线立面图案；夜里（网页暗色主题）窗格亮灯
    · 190×190 棋盘，透视相机（近大远小）
-   · 视角：左键拖动绕「画面中心正下方的点」旋转 / 改俯仰（拖动时显示中轴），
+   · 视角：左键拖动绕「按下时鼠标所指的点」旋转 / 改俯仰（拖动时显示中轴），
      滚轮缩放；展开后右键或 Shift+拖动平移、滚轮朝鼠标位置缩放
    · 右下角只能旋转和缩放；点左上角三角展开后才能编辑：
        空格   指着顶面 / 地面 → 往上盖一层；指着某层侧面 → 在该面加侧翼（长按连放）
@@ -208,7 +208,7 @@ const cells = new Map(), bridges = [];
 const hist = [], redoStack = [];
 let sel = Object.assign({ t: "grid", s: "M", r: 0 }, (() => { try { return JSON.parse(localStorage.getItem(KEY_SEL)) || {}; } catch (e) { return {}; } })());
 if (!FLOORS.has(sel.t)) sel.t = "grid";
-let night = false, hover = null, expanded = false, tAnchor = null;
+let night = false, hover = null, expanded = false, tAnchor = null, drag = null;
 
 /* ---------------- three.js 场景 ---------------- */
 let renderer, scene, camera, hemi, sun, faceMat, lineMat, paneMat, ghostFace, ghostLine, hiLine;
@@ -255,7 +255,11 @@ function initThree() {
   (function loop() {
     requestAnimationFrame(loop);
     const dt = goal.theta - cam.theta, dp = goal.phi - cam.phi;           // 旋转缓动
-    if (Math.abs(dt) > .01 || Math.abs(dp) > .01) { cam.theta += dt * config.damping; cam.phi += dp * config.damping; updateCamera(); }
+    if (Math.abs(dt) > .01 || Math.abs(dp) > .01) {
+      const st = dt * config.damping; cam.theta += st; cam.phi += dp * config.damping;
+      if (orbit) orbitTarget(rad(st));
+      updateCamera();
+    } else if (orbit && !drag) { orbit = null; }
     if (!needs || !host) return; needs = false; fadeGrid(); renderer.render(scene, camera); emit("render");
   })();
 }
@@ -296,6 +300,12 @@ function clampCam() {
   cam.tx = Math.max(-lim, Math.min(lim, cam.tx)); cam.tz = Math.max(-lim, Math.min(lim, cam.tz));
 }
 function rotateBy(dTheta, dPhi) { goal.theta += dTheta; goal.phi += dPhi; clampAngles(goal); }
+/* 中轴点：按下左键时鼠标下方的点（楼上或地面）；null 时绕画面中心 */
+let orbit = null;
+function orbitTarget(d) {
+  const c = Math.cos(d), sn = Math.sin(d), x = cam.tx - orbit.x, z = cam.tz - orbit.z;
+  cam.tx = orbit.x + x * c + z * sn; cam.tz = orbit.z + z * c - x * sn;
+}
 function updateCamera() {
   clampCam();
   const R = cam.dist, ph = rad(cam.phi), th = rad(cam.theta);
@@ -303,7 +313,7 @@ function updateCamera() {
   camera.lookAt(cam.tx, 0, cam.tz);
   const w = host ? host.clientWidth : 300, h = host ? host.clientHeight : 150;
   camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix();
-  if (pivot) { pivot.position.set(cam.tx, 0, cam.tz); pivot.scale.setScalar(cam.dist / 40); }
+  if (pivot) { pivot.position.set(orbit ? orbit.x : cam.tx, 0, orbit ? orbit.z : cam.tz); pivot.scale.setScalar(cam.dist / 40); }
   req();
 }
 function resize() {
@@ -530,7 +540,6 @@ function updateLink() {
 }
 
 /* ---------------- 指针：旋转 / 平移 / 缩放 ---------------- */
-let drag = null;
 function bindPointer(cv) {
   cv.addEventListener("contextmenu", e => e.preventDefault());
   const hov = e => { setHover(expanded ? pick(e) : null); if (tAnchor) updateLink(); };
@@ -539,7 +548,14 @@ function bindPointer(cv) {
     e.stopPropagation();
     const pan = expanded && (e.button === 2 || e.button === 1 || e.shiftKey);
     drag = { lx: e.clientX, ly: e.clientY, pan, g: pan ? groundAt(e) : null };
-    if (!pan) { pivot.visible = true; req(); }
+    if (!pan) {
+      /* 按在楼上：中轴取这栋楼的中心（楼原地转）；按在地面或连廊：取按下的点 */
+      setRay(e); const hit = ray.intersectObjects(hitMeshes, false)[0], u = hit && hit.object.userData;
+      const fl = u && (u.kind === "floor" || u.kind === "wing") ? stackOf(u.i, u.j)[u.k] : null;
+      const g = fl ? fl.obj.position : hit ? hit.point : groundAt(e);
+      orbit = g ? { x: g.x, z: g.z } : null; goal.theta = cam.theta; goal.phi = cam.phi;
+      pivot.visible = true; updateCamera();
+    }
     try { cv.setPointerCapture(e.pointerId); } catch (_) { } cv.classList.add("grabbing");
   });
   cv.addEventListener("pointermove", e => {
