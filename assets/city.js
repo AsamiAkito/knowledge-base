@@ -32,7 +32,8 @@ const config = {
   distMin: 1.2, distMax: 420,                       // 相机到中轴点的距离范围（缩放）
   rotStep: 15,                                    // R 键每次顺时针旋转的角度
   damping: .22,                                   // 旋转缓动（0–1，越大越跟手）
-  recenterNear: 30,                               // 相机距离小于它时视野可移到棋盘任意位置，大于它逐步回中
+  recenterNear: 30,
+  fadeNear: 12, fadeReach: 6,                     // 相机距离小于 fadeNear 才虚化；只虚化离镜头 fadeReach 格以内挡视线的楼                               // 相机距离小于它时视野可移到棋盘任意位置，大于它逐步回中
   thickness: 3,                                   // 棋盘厚度（格）
   digLevel: .16, digMax: 3, raiseMax: 300,         // 地面每层高度（= 一层楼高）、最多下挖 / 升高几层（山可以比最高的楼还高）
   terrainBand: 40,                                // 随机地形只在离边缘这么多格以内，越靠边越高
@@ -330,7 +331,9 @@ const cells = new Map(), bridges = [], terrain = new Map();   // terrain: "i,j" 
 const hist = [], redoStack = [];
 let sel = Object.assign({ t: "grid", s: "M", r: 0 }, (() => { try { return JSON.parse(localStorage.getItem(KEY_SEL)) || {}; } catch (e) { return {}; } })());
 if (!FLOORS.has(sel.t)) sel.t = "grid";
-sel.view = true; sel.tpl = null; sel.decal = null;                // 打开时默认观赏模式（鼠标按钮）
+sel.view = true; sel.tpl = null; sel.decal = null;
+if (!["S", "M", "W", "T"].includes(sel.wsz)) sel.wsz = "M"; if (sel.wlit == null) sel.wlit = 1;
+const decalType = () => sel.decal === "window" ? "win:" + sel.wsz + ":" + (sel.wlit ? 1 : 0) : sel.decal;                // 打开时默认观赏模式（鼠标按钮）
 const paneLight = { value: 0 }; let paneVis = null;
 let night = false, hover = null, expanded = false, tAnchor = null, drag = null;
 
@@ -544,14 +547,15 @@ function updateFade() {
   if (!fadeFace) { fadeFace = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: .1, depthWrite: false, side: THREE.DoubleSide });
     fadeLine = new THREE.LineBasicMaterial({ transparent: true, opacity: .16, depthWrite: false }); }
   fadeFace.color.copy(faceMat.color); fadeLine.color.copy(lineMat.color);
-  const close = expanded && cam.dist < 40, cp = camera.position, tgt = new THREE.Vector3(cam.tx, 0, cam.tz);
+  const close = expanded && cam.dist < config.fadeNear, cp = camera.position, tgt = new THREE.Vector3(cam.tx, 0, cam.tz);
   /* 视线：镜头 → 注视点，以及注视点左右前后偏移的几条；被视线先穿过（挡在注视点前面）的楼要虚化 */
   const side = new THREE.Vector3().subVectors(tgt, cp).cross(new THREE.Vector3(0, 1, 0)).normalize().multiplyScalar(cam.dist * .3);
   const rays = close ? [tgt, tgt.clone().add(side), tgt.clone().sub(side), tgt.clone().add(new THREE.Vector3(0, cam.dist * .15, 0))].map(t => ({ ray: new THREE.Ray(cp.clone(), t.clone().sub(cp).normalize()), len: t.distanceTo(cp) })) : [];
   const hitP = new THREE.Vector3();
   baked.forEach((grp, key) => {
     const b = grp.userData.box, holds = cam.tx >= b.min.x && cam.tx <= b.max.x && cam.tz >= b.min.z && cam.tz <= b.max.z;   // 正在看的这栋不虚化
-    const f = close && !holds && (b.distanceToPoint(cp) < Math.max(1.2, cam.dist * .4) || rays.some(({ ray, len }) => ray.intersectBox(b, hitP) && hitP.distanceTo(cp) < len * .92));
+    const reach = Math.min(config.fadeReach, cam.dist * .75);
+    const f = close && !holds && b.distanceToPoint(cp) < reach && (b.distanceToPoint(cp) < Math.max(.6, cam.dist * .25) || rays.some(({ ray, len }) => ray.intersectBox(b, hitP) && hitP.distanceTo(cp) < Math.min(len * .85, reach)));
     if (f === faded.has(key)) return; f ? faded.add(key) : faded.delete(key);
     grp.children.forEach(o => {
       if (o.userData.pane) { o.visible = !f && night; return; }
@@ -655,6 +659,10 @@ function bakeCell(key) {
   bakeGroup.add(grp); baked.set(key, grp); fadeDirty = true;
 }
 /* 贴图几何：在楼层本地坐标的第 d 个面上、沿面位置 u 处，返回 { lines, pane } */
+const WIN = { S: [.06, .06], M: [.1, .09], W: [.2, .09], T: [.07, .13] };      // 窗户宽 × 高（格）
+const isWin = t => t === "window" || /^win:/.test(t || "");
+function winOf(t) { const m = /^win:(\w):(\d)$/.exec(t || ""); return m && WIN[m[1]] ? { s: m[1], lit: m[2] === "1" } : { s: "M", lit: true }; }
+const normDecal = t => t === "window" ? "win:M:1" : t;
 function decalGeo(f, d, u, type) {
   const g = floorGeo(f.t, f.s, f.v); if (!g.solid.boundingBox) g.solid.computeBoundingBox();
   const bb = g.solid.boundingBox, [nx, nz] = FACES[d], hn = (nx ? Math.max(-bb.min.x, bb.max.x) : Math.max(-bb.min.z, bb.max.z)) + .005, tx = -nz, tz = nx, h = f.h;
@@ -664,38 +672,38 @@ function decalGeo(f, d, u, type) {
   if (type === "door") { pw = .1; y0 = 0; y1 = Math.min(h * .9, .15);
     rect(u - pw / 2, u + pw / 2, y0, y1, true); rect(u - pw / 2 + .015, u + pw / 2 - .015, y0 + .015, y1 - .015, true);
     L.push(P(u + pw / 2 - .03, y1 * .5), P(u + pw / 2 - .03, y1 * .5 + .02)); }
-  else { pw = .12; y0 = h * .18; y1 = h * .82;
+  else { const w = winOf(type), [ww, wh] = WIN[w.s], hh = Math.min(wh, h * .84); pw = ww; y0 = h / 2 - hh / 2; y1 = h / 2 + hh / 2;
     rect(u - pw / 2, u + pw / 2, y0, y1); }
   const q = [P(u - pw / 2, y0), P(u + pw / 2, y0), P(u + pw / 2, y1), P(u - pw / 2, y0), P(u + pw / 2, y1), P(u - pw / 2, y1)], c3 = type === "door" ? [.85, .62, .32] : [1, .82, .42];
   const pos = [], col = []; q.forEach(v => { pos.push(...v); col.push(...c3); });
   const pg = new THREE.BufferGeometry(); pg.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); pg.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
-  return { lines: lines(L), pane: pg };
+  return { lines: lines(L), pane: type === "door" || winOf(type).lit ? pg : null };     // 关灯的窗只有外框
 }
 function decalU(f, type, u) {
-  const g = floorGeo(f.t, f.s, f.v), lim = Math.max(0, g.w / 2 - (type === "door" ? .06 : .07));
+  const g = floorGeo(f.t, f.s, f.v), lim = Math.max(0, g.w / 2 - (type === "door" ? .06 : WIN[winOf(type).s][0] / 2 + .01));
   return Math.max(-lim, Math.min(lim, Math.round((u || 0) / .04) * .04));
 }
 function decalObj(f, dc, lmat = lineMat, ghostMat) {
   const g = decalGeo(f, dc.d, dc.u, dc.type), grp = new THREE.Group();
   grp.add(new THREE.LineSegments(g.lines, lmat));
-  if (!ghostMat) { const pm = new THREE.Mesh(g.pane, paneMat); pm.userData.pane = true; pm.visible = night; grp.add(pm); }
+  if (!ghostMat && g.pane) { const pm = new THREE.Mesh(g.pane, paneMat); pm.userData.pane = true; pm.visible = night; grp.add(pm); }
   return grp;
 }
 function attachDecal(i, j, k, dc) {
-  const f = stackOf(i, j)[k]; if (!f) return null; const u = decalU(f, dc.type, dc.u);
-  if (f.decals.some(x => x.d === dc.d && x.type === dc.type && Math.abs(x.u - u) < 1e-6)) return null;
-  const rec = { d: dc.d, u, type: dc.type }; rec.obj = decalObj(f, rec); f.obj.add(rec.obj); f.decals.push(rec); markDirty(i, j); return rec;
+  const f = stackOf(i, j)[k]; if (!f) return null; const type = normDecal(dc.type), u = decalU(f, type, dc.u);
+  if (f.decals.some(x => x.d === dc.d && isWin(x.type) === isWin(type) && Math.abs(x.u - u) < 1e-6)) return null;
+  const rec = { d: dc.d, u, type }; rec.obj = decalObj(f, rec); f.obj.add(rec.obj); f.decals.push(rec); markDirty(i, j); return rec;
 }
 function detachDecal(i, j, k, d, type, u) {
   const f = stackOf(i, j)[k]; if (!f) return null;
-  let n = -1, bd = 1e9; f.decals.forEach((x, q) => { if (x.d === d && x.type === type && Math.abs(x.u - u) < bd) { bd = Math.abs(x.u - u); n = q; } });
+  let n = -1, bd = 1e9; f.decals.forEach((x, q) => { if (x.d === d && (x.type === type || (isWin(x.type) && isWin(type))) && Math.abs(x.u - u) < bd) { bd = Math.abs(x.u - u); n = q; } });
   if (n < 0 || bd > .12) return null;
   const x = f.decals.splice(n, 1)[0]; f.obj.remove(x.obj); x.obj.traverse(o => { if (o.geometry) o.geometry.dispose(); }); markDirty(i, j);
   return { d: x.d, u: x.u, type: x.type };
 }
 function addDecal(i, j, k, d, u, type) {
   const r = attachDecal(i, j, k, { d, u, type }); if (!r) { emit("blocked", { i, j, k, d }); return false; }
-  record({ op: "decal+", i, j, k, dc: { d: r.d, u: r.u, type } }); changed(); emit("decal", { i, j, k, d, type }); return true;
+  record({ op: "decal+", i, j, k, dc: { d: r.d, u: r.u, type: r.type } }); changed(); emit("decal", { i, j, k, d, type }); return true;
 }
 function removeDecal(i, j, k, d, u, type) {
   const r = detachDecal(i, j, k, d, type, u); if (!r) return false;
@@ -1298,7 +1306,7 @@ function updateGhost() {
         ok = sel.decal === "grass" ? !grass.has(k) && !water.has(k) : sel.decal === "water" ? !water.has(k) && !roads.has(k) && !stackOf(hover.i, hover.j).length : !roads.has(k) && !stackOf(hover.i, hover.j).length;
       hoverBox.position.set(hover.i - HALF + .5, stackTop(hover.i, hover.j) + .006, hover.j - HALF + .5); hoverBox.material.color.set(ok ? accent() : "#c0344d"); hoverBox.visible = true; } }
     else if (hover.kind === "side") { const f = stackOf(hover.i, hover.j)[hover.k];
-      if (f) { ghost.add(decalObj(f, { d: hover.d, u: decalU(f, sel.decal, hover.u), type: sel.decal }, ghostLine, true));
+      if (f) { ghost.add(decalObj(f, { d: hover.d, u: decalU(f, decalType(), hover.u), type: decalType() }, ghostLine, true));
         f.obj.updateMatrixWorld(true); f.obj.matrixWorld.decompose(ghost.position, ghost.quaternion, ghost.scale); ghost.visible = true; } }
     return req();
   }
@@ -1422,7 +1430,7 @@ function doPlace() {
     if (sel.decal === "street") { if (hover.kind === "top" && hover.i != null) addRoad(hover.i, hover.j); }
     else if (sel.decal === "grass") { if (hover.kind === "top" && hover.i != null) addGrass(hover.i, hover.j); }
     else if (sel.decal === "water") { if (hover.kind === "top" && hover.i != null) addWater(hover.i, hover.j); }
-    else if (hover.kind === "side") addDecal(hover.i, hover.j, hover.k, hover.d, hover.u, sel.decal);
+    else if (hover.kind === "side") addDecal(hover.i, hover.j, hover.k, hover.d, hover.u, decalType());
     return;
   }
   if (blockMode() && hover.kind !== "side") { const p = blockAim(); if (p) placeBlock(p.x, p.z, sel.t, hover.kind === "block" && !(hover.n && hover.n[1] > 0) ? p.y : undefined); return; }
@@ -1535,7 +1543,7 @@ const FULL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-
 const DI = p => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round">' + p + "</svg>";
 const DECALS = [
   ["street", "街道", DI('<path d="M7 3 4 21M17 3l3 18"/><path d="M12 4v3M12 10.5v3M12 17v3"/>')],
-  ["window", "窗户贴图", DI('<rect x="7" y="5" width="10" height="14"/><path d="M12 5v14M7 13.5h10"/>')],
+  ["window", "窗户贴图", DI('<rect x="7.5" y="4.5" width="9" height="15"/>')],
   ["door", "门贴图", DI('<path d="M7 21V4h10v17M4 21h16"/><path d="M14.5 12.5v1.5"/>')],
   ["water", "水", DI('<path d="M3 9c2-1.6 4-1.6 6 0s4 1.6 6 0 4-1.6 6 0M3 14c2-1.6 4-1.6 6 0s4 1.6 6 0 4-1.6 6 0M3 19c2-1.6 4-1.6 6 0s4 1.6 6 0 4-1.6 6 0"/>')],
   ["grass", "草地", DI('<path d="M3 20h18"/><path d="M6 20c0-3 1-5 2-7M9 20c0-4 .5-6 1.5-9M13 20c0-3 1.5-6 3-8M17 20c0-2 .5-4 2-5"/>')]];
@@ -1554,6 +1562,13 @@ function renderBar() {
     + '<span class="cb-sep"></span><div class="cb-group">'
     + '<button class="cb-btn" data-act="undo" title="撤销 Ctrl+Z">' + UNDO + '</button>'
     + '<button class="cb-btn" data-act="redo" title="重做 Ctrl+Shift+Z">' + REDO + '</button>'
+    + (sel.decal === "window" ? '<div class="cb-sub">'
+      + [[1, "开灯", '<rect x="7.5" y="4.5" width="9" height="15" fill="currentColor" fill-opacity=".35"/>'], [0, "关灯", '<rect x="7.5" y="4.5" width="9" height="15"/>']]
+        .map(([v, n, p]) => '<button class="cb-btn' + ((sel.wlit ? 1 : 0) === v ? ' on' : '') + '" data-wl="' + v + '" aria-label="' + n + '">' + DI(p) + '</button>').join("")
+      + '<span class="cb-sep"></span>'
+      + [["S", "小", [9, 9, 6, 6]], ["M", "中", [7, 8, 10, 8]], ["W", "宽", [3, 8, 18, 8]], ["T", "高", [8.5, 4, 7, 16]]]
+        .map(([v, n, [x, y, w, h]]) => '<button class="cb-btn' + (sel.wsz === v ? ' on' : '') + '" data-ws="' + v + '" aria-label="' + n + '">' + DI('<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '"/>') + '</button>').join("")
+      + '</div>' : '')
     + extraButtons.map((b, k) => '<button class="cb-btn" data-x="' + k + '" title="' + (b.title || "") + '">' + (b.icon || b.title || "") + '</button>').join("")
     + '</div>';
 }
@@ -1620,6 +1635,11 @@ function injectCSS() {
   .cb-btn:hover{background:color-mix(in srgb,var(--text) 6%,transparent);color:var(--text)}
   .cb-btn.on{border-color:var(--accent);color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent)}
   .cb-size{width:32px}
+  .city-bar{position:relative}
+  .cb-sub{position:absolute;left:50%;bottom:calc(100% + 8px);transform:translateX(-50%);display:flex;align-items:center;gap:2px;padding:4px;
+    background:var(--card);border-radius:var(--r,2px);box-shadow:var(--sh3);animation:cbsub var(--d1,120ms) var(--e-out,ease)}
+  @keyframes cbsub{from{opacity:0;transform:translate(-50%,4px)}}
+  .city-pop.night .cb-sub{background:#1a1c26}
   .cb-pv{position:absolute;width:132px;height:156px;z-index:4;pointer-events:none;background:var(--card);border-radius:var(--r,2px);box-shadow:var(--sh3);
     opacity:0;transform:translateY(4px);transition:opacity var(--d1,120ms) var(--e-out,ease),transform var(--d1,120ms) var(--e-out,ease)}
   .cb-pv.show{opacity:1;transform:none}
@@ -1679,6 +1699,8 @@ function buildUI() {
     const b = e.target.closest(".cb-btn"); if (!b) return;
     if (b.dataset.t) select(b.dataset.t); else if (b.dataset.s) select(null, b.dataset.s);
     else if (b.dataset.tpl) { sel.tpl = sel.tpl === b.dataset.tpl ? null : b.dataset.tpl; sel.decal = null; sel.view = false; select(); }
+    else if (b.dataset.wl != null) { sel.wlit = +b.dataset.wl; select(); }
+    else if (b.dataset.ws) { sel.wsz = b.dataset.ws; select(); }
     else if (b.dataset.decal) { sel.decal = sel.decal === b.dataset.decal ? null : b.dataset.decal; sel.tpl = null; sel.view = false; select(); }
     else if (b.dataset.act === "view") setView(true); else if (b.dataset.act === "pure") setPure(true);
     else if (b.dataset.act === "undo") undo(); else if (b.dataset.act === "redo") redo();
