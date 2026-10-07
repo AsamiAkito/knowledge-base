@@ -34,8 +34,8 @@ const config = {
   damping: .22,                                   // 旋转缓动（0–1，越大越跟手）
   recenterNear: 30,                               // 相机距离小于它时视野可移到棋盘任意位置，大于它逐步回中
   thickness: 3,                                   // 棋盘厚度（格）
-  digLevel: .16, digMax: 3, raiseMax: 12,         // 地面每层高度（= 一层楼高）、最多下挖 / 升高几层
-  terrainBand: 36,                                // 随机地形只在离边缘这么多格以内，越靠边越高
+  digLevel: .16, digMax: 3, raiseMax: 120,         // 地面每层高度（= 一层楼高）、最多下挖 / 升高几层
+  terrainBand: 40,                                // 随机地形只在离边缘这么多格以内，越靠边越高
   wingDepth: .32,                                 // 侧翼伸出的深度（格）
   repeatDelay: 300, repeatEvery: 90               // 长按连放 / 连删的节奏（毫秒）
 };
@@ -309,14 +309,15 @@ registerTemplate({ id: "random", name: "随机城市楼", icon: IT('<rect x="5" 
 
 /* ---------------- 配色：白天 = 网页亮色主题，夜晚 = 网页暗色主题 ---------------- */
 function palette(night) {
-  if (night) return { road: 0x272a37, face: 0x22252f, line: 0x7d84a0, ground: 0x1d2030, side: 0x181a26, side2: 0x151721, minor: 0x272b3c, major: 0x333850, sky: 0x9aa0c0, gnd: 0x1a1c28, ambient: 1.6, sun: .6, clear: 0x13141b };
-  return { road: 0xebebf0, face: 0xffffff, line: 0x2c2e36, ground: 0xfcfcfd, side: 0xececf2, side2: 0xe1e1ea, minor: 0xececf2, major: 0xdadae4, sky: 0xffffff, gnd: 0xdedeea, ambient: 2.9, sun: .5, clear: 0xf6f6f4 };
+  if (night) return { tLine: 0x596080, tLow: 0x1d2030, tHigh: 0x343a52, tWall: 0x151722, tPit: 0x171925, gLow: 0x1e2e24, gHigh: 0x2f4a35, water: 0x1b3045, waterFall: 0x24405a, road: 0x272a37, face: 0x22252f, line: 0x7d84a0, ground: 0x1d2030, side: 0x181a26, side2: 0x151721, minor: 0x272b3c, major: 0x333850, sky: 0x9aa0c0, gnd: 0x1a1c28, ambient: 1.6, sun: .6, clear: 0x13141b };
+  return { tLine: 0x9a9cad, tLow: 0xfbfbfd, tHigh: 0xb4b7c7, tWall: 0xcfd0dc, tPit: 0xe4e4ec, gLow: 0xd9e8cb, gHigh: 0x9fbb8a, water: 0xcfe3ef, waterFall: 0xb7d2e4, road: 0xebebf0, face: 0xffffff, line: 0x2c2e36, ground: 0xfcfcfd, side: 0xececf2, side2: 0xe1e1ea, minor: 0xececf2, major: 0xdadae4, sky: 0xffffff, gnd: 0xdedeea, ambient: 2.9, sun: .5, clear: 0xf6f6f4 };
 }
 
 /* ---------------- 状态 ----------------
    cells:   "i,j" → [ floor ]，floor = { t,s,v,r, wings:[{d,t,s,v,obj}], obj, h }
    bridges: [ { a:[i,j,k], b:[i,j,k], obj } ] */
 const roads = new Set();                                   // 街道："i,j"
+const water = new Set(), grass = new Set();                // 河流（地形：河床格 + 水面）、草地（地形表面）
 const cells = new Map(), bridges = [], terrain = new Map();   // terrain: "i,j" → 地面高度层数（负 = 坑，正 = 高地）
 const hist = [], redoStack = [];
 let sel = Object.assign({ t: "grid", s: "M", r: 0 }, (() => { try { return JSON.parse(localStorage.getItem(KEY_SEL)) || {}; } catch (e) { return {}; } })());
@@ -325,7 +326,7 @@ let night = false, hover = null, expanded = false, tAnchor = null, drag = null;
 
 /* ---------------- three.js 场景 ---------------- */
 let facadeMat, renderer, scene, camera, hemi, sun, faceMat, lineMat, paneMat, ghostFace, ghostLine, hiLine;
-let roadMat, roadMesh, roadLines, roadEdge, bakeGroup, ground, groundTop, digMask, pitMesh, pitEdges, pitMat, gridMinor, gridMajor, floorsGroup, bridgeGroup, hoverBox, ghost, pivot, linkLine, hitMeshes = [], hiObj = null;
+let terrainLine, grassMesh, waterMesh, waterLines, terrainNight = null, roadMat, roadMesh, roadLines, roadEdge, bakeGroup, ground, groundTop, digMask, pitMesh, pitEdges, pitMat, gridMinor, gridMajor, floorsGroup, bridgeGroup, hoverBox, ghost, pivot, linkLine, hitMeshes = [], hiObj = null;
 const cam = { tx: 0, tz: 0, theta: 45, phi: 38, dist: 360 }, goal = { theta: 45, phi: 38 };   // 默认全览整块棋盘
 
 function initThree() {
@@ -354,8 +355,12 @@ function initThree() {
   digMask = new THREE.DataTexture(mdata, M, M, THREE.RGBAFormat); digMask.magFilter = digMask.minFilter = THREE.NearestFilter; digMask.needsUpdate = true;
   const tGeo = new THREE.PlaneGeometry(M, M); tGeo.rotateX(-Math.PI / 2);
   groundTop = new THREE.Mesh(tGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, alphaMap: digMask, alphaTest: .5, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
-  pitMat = new THREE.MeshLambertMaterial({ color: 0xffffff, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
-  pitMesh = new THREE.Mesh(new THREE.BufferGeometry(), pitMat); pitEdges = new THREE.LineSegments(new THREE.BufferGeometry(), lineMat);
+  pitMat = new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+  grassMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+  waterMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, side: THREE.DoubleSide }));
+  waterLines = new THREE.LineSegments(new THREE.BufferGeometry(), facadeMat);
+  scene.add(grassMesh, waterMesh, waterLines);
+  pitMesh = new THREE.Mesh(new THREE.BufferGeometry(), pitMat); terrainLine = new THREE.LineBasicMaterial({ color: 0x8d8fa0, transparent: true }); pitEdges = new THREE.LineSegments(new THREE.BufferGeometry(), terrainLine);
   roadMat = new THREE.MeshBasicMaterial({ color: 0xebebf0, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   roadMesh = new THREE.Mesh(new THREE.BufferGeometry(), roadMat); roadLines = new THREE.LineSegments(new THREE.BufferGeometry(), facadeMat);
   roadEdge = new THREE.LineSegments(new THREE.BufferGeometry(), lineMat);
@@ -396,6 +401,7 @@ function initThree() {
       if (mx || mz) { cam.tx += mx * sp; cam.tz += mz * sp; orbit = null; updateCamera(); }
     }
     if (dirtyCells.size) { dirtyCells.forEach(bakeCell); dirtyCells.clear(); }
+    if (fadeDirty) { fadeDirty = false; updateFade(); }
     if (!needs || !host) return; needs = false; fadeGrid(); renderer.render(scene, camera); emit("render");
   })();
 }
@@ -413,21 +419,47 @@ function maskLines(mat, M) {
 /* 地形：每个非零格画一块顶面（坑底或高地顶），只在两格高度不同的边界画一整面竖墙（不分层），
    相邻同高的格子共面相连，所以整块地形中间没有缝线 */
 function rebuildTerrain() {
-  const M = N + 2, data = digMask.image.data, L = config.digLevel, tri = [];
-  data.fill(255);
-  const quad = (a, b, c, d) => tri.push(...a, ...b, ...c, ...a, ...c, ...d);
+  const M = N + 2, data = digMask.image.data, L = config.digLevel, tri = [], col = [], gtri = [], gcol = [], wtri = [], wcol = [], wav = [];
+  const p = palette(night), C = h => new THREE.Color(h), cLow = C(p.tLow), cHigh = C(p.tHigh), cWall = C(p.tWall), cPit = C(p.tPit),
+    gLow = C(p.gLow), gHigh = C(p.gHigh), cWater = C(p.water), cFall = C(p.waterFall), top = config.raiseMax;
+  terrainNight = night; data.fill(255);
+  const quad = (T, Cc, c, a, b, cc, d) => { T.push(...a, ...b, ...cc, ...a, ...cc, ...d); for (let q = 0; q < 6; q++) Cc.push(c.r, c.g, c.b); };
+  const wsurf = (i, j) => levelOf(i, j) * L + .09;                                                // 水面比河床高一点
+  const NB = (i, j, x0, x1, z0, z1) => [[i + 1, j, x1, z0, x1, z1], [i - 1, j, x0, z1, x0, z0], [i, j + 1, x1, z1, x0, z1], [i, j - 1, x0, z0, x1, z0]];
   terrain.forEach((h, key) => {
     const [i, j] = key.split(",").map(Number), x0 = i - HALF, x1 = x0 + 1, z0 = j - HALF, z1 = z0 + 1, y = h * L;
     const px = ((M - 1 - (j + 1)) * M + (i + 1)) * 4; data[px] = data[px + 1] = data[px + 2] = data[px + 3] = 0;
-    quad([x0, y, z0], [x1, y, z0], [x1, y, z1], [x0, y, z1]);
-    [[i + 1, j, x1, z0, x1, z1], [i - 1, j, x0, z1, x0, z0], [i, j + 1, x1, z1, x0, z1], [i, j - 1, x0, z0, x1, z0]].forEach(([ni, nj, ax, az, bx, bz]) => {
+    const ct = h > 0 ? cLow.clone().lerp(cHigh, Math.min(1, h / top)) : cPit;                   // 越高越深，一眼分出高低
+    quad(tri, col, ct, [x0, y, z0], [x1, y, z0], [x1, y, z1], [x0, y, z1]);
+    NB(i, j, x0, x1, z0, z1).forEach(([ni, nj, ax, az, bx, bz]) => {
       const nh = levelOf(ni, nj);
-      if (h > nh) quad([ax, nh * L, az], [bx, nh * L, bz], [bx, y, bz], [ax, y, az]);                // 比邻格高：画到邻格高度
-      else if (h < nh && nh === 0) quad([ax, y, az], [bx, y, bz], [bx, 0, bz], [ax, 0, az]);         // 坑边是平地：坑壁画到地面
+      if (h > nh) quad(tri, col, cWall, [ax, nh * L, az], [bx, nh * L, bz], [bx, y, bz], [ax, y, az]);   // 比邻格高：画到邻格高度
+      else if (h < nh && nh === 0) quad(tri, col, cWall, [ax, y, az], [bx, y, bz], [bx, 0, bz], [ax, 0, az]);
     });
   });
+  /* 草地：贴在格子顶面的一层淡绿，越高越深；不另画线 */
+  grass.forEach(key => {
+    const [i, j] = key.split(",").map(Number); if (roads.has(key) || water.has(key)) return;
+    const x0 = i - HALF, x1 = x0 + 1, z0 = j - HALF, z1 = z0 + 1, h = levelOf(i, j), y = h * L + .002;
+    quad(gtri, gcol, gLow.clone().lerp(gHigh, Math.max(0, Math.min(1, h / top))), [x0, y, z0], [x1, y, z0], [x1, y, z1], [x0, y, z1]);
+  });
+  /* 水面：每格一块；相邻河段水面高差处画一面「瀑布」；水面上两道短波纹 */
+  water.forEach(key => {
+    const [i, j] = key.split(",").map(Number), x0 = i - HALF, x1 = x0 + 1, z0 = j - HALF, z1 = z0 + 1, y = wsurf(i, j);
+    quad(wtri, wcol, cWater, [x0, y, z0], [x1, y, z0], [x1, y, z1], [x0, y, z1]);
+    NB(i, j, x0, x1, z0, z1).forEach(([ni, nj, ax, az, bx, bz]) => {
+      if (!water.has(K(ni, nj))) return; const yn = wsurf(ni, nj); if (yn >= y - 1e-4) return;
+      quad(wtri, wcol, cFall, [ax, yn, az], [bx, yn, bz], [bx, y, bz], [ax, y, az]);
+    });
+    const o = ((i * 7 + j * 13) % 5) / 10;
+    wav.push(x0 + .15 + o * .5, y + .002, z0 + .3, x0 + .45 + o * .5, y + .002, z0 + .3, x0 + .3 - o * .2, y + .002, z0 + .72, x0 + .62 - o * .2, y + .002, z0 + .72);
+  });
   digMask.needsUpdate = true;
-  const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(tri, 3)); g.computeVertexNormals();
+  const mk = (T, Cc, normals) => { const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(T, 3)); g.setAttribute("color", new THREE.Float32BufferAttribute(Cc, 3)); if (normals) g.computeVertexNormals(); return g; };
+  grassMesh.geometry.dispose(); grassMesh.geometry = mk(gtri, gcol, true);
+  waterMesh.geometry.dispose(); waterMesh.geometry = mk(wtri, wcol, false);
+  waterLines.geometry.dispose(); { const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(wav, 3)); waterLines.geometry = g; }
+  const g = mk(tri, col, true);
   pitMesh.geometry.dispose(); pitMesh.geometry = g;
   pitEdges.geometry.dispose(); pitEdges.geometry = tri.length ? new THREE.EdgesGeometry(g, 30) : new THREE.BufferGeometry();
   req();
@@ -436,14 +468,16 @@ function accent() { return getComputedStyle(document.documentElement).getPropert
 function applyPalette() {
   const p = palette(night);
   faceMat.color.setHex(p.face); lineMat.color.setHex(p.line); facadeMat.color.setHex(p.line);
-  groundTop.material.color.setHex(p.ground); pitMat.color.setHex(p.ground); roadMat.color.setHex(p.road);
+  groundTop.material.color.setHex(p.ground); roadMat.color.setHex(p.road); terrainLine.color.setHex(p.tLine);
+  if (terrainNight !== night) rebuildTerrain();                   // 地形顶点色跟昼夜走，只在切换时重算
   [0, 1].forEach(k => ground.material[k].color.setHex(p.side)); [3, 4, 5].forEach(k => ground.material[k].color.setHex(p.side2));
   gridMinor.material.color.setHex(p.minor); gridMajor.material.color.setHex(p.major);
   hemi.color.setHex(p.sky); hemi.groundColor.setHex(p.gnd); hemi.intensity = p.ambient; sun.intensity = p.sun;
   const a = new THREE.Color(accent());
   [hoverBox.material, ghostFace, ghostLine, pivot.children[0].material, linkLine.material].forEach(m => m.color.copy(a));
   renderer.setClearColor(p.clear, expanded ? 1 : 0);
-  scene.traverse(o => { if (o.userData.pane) o.visible = night; });     // 白天纯线稿，夜里窗格亮灯
+  scene.traverse(o => { if (o.userData.pane) o.visible = night; });
+  faded.forEach(k => { const g = baked.get(k); if (g) g.children.forEach(o => { if (o.userData.pane) o.visible = false; }); }); fadeDirty = true;     // 白天纯线稿，夜里窗格亮灯
   if (pop) pop.classList.toggle("night", night);
   req();
 }
@@ -453,6 +487,7 @@ function fadeGrid() {
   gridMinor.visible = gridMinor.material.opacity > .02;
   facadeMat.opacity = Math.max(0, Math.min(1, (ppc - 4) / 10));          // 拉远时立面细节淡出，只留楼体轮廓
   facadeMat.visible = facadeMat.opacity > .02;
+  terrainLine.opacity = Math.max(0, Math.min(1, (ppc - 2) / 8)); terrainLine.visible = terrainLine.opacity > .02;   // 地形台阶线拉远时淡出，远看靠颜色分辨高低
 }
 
 /* ---------------- 相机：绕中轴点（画面中心正下方的地面点）旋转 ---------------- */
@@ -476,7 +511,30 @@ function orbitTarget(d) {
   const c = Math.cos(d), sn = Math.sin(d), x = cam.tx - orbit.x, z = cam.tz - orbit.z;
   cam.tx = orbit.x + x * c + z * sn; cam.tz = orbit.z + z * c - x * sn;
 }
-function updateCamera() {
+let fadeDirty = false, fadeFace = null, fadeLine = null;
+const faded = new Set();
+function updateFade() {
+  if (!fadeFace) { fadeFace = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: .1, depthWrite: false, side: THREE.DoubleSide });
+    fadeLine = new THREE.LineBasicMaterial({ transparent: true, opacity: .16, depthWrite: false }); }
+  fadeFace.color.copy(faceMat.color); fadeLine.color.copy(lineMat.color);
+  const close = expanded && cam.dist < 40, cp = camera.position, tgt = new THREE.Vector3(cam.tx, 0, cam.tz);
+  /* 视线：镜头 → 注视点，以及注视点左右前后偏移的几条；被视线先穿过（挡在注视点前面）的楼要虚化 */
+  const side = new THREE.Vector3().subVectors(tgt, cp).cross(new THREE.Vector3(0, 1, 0)).normalize().multiplyScalar(cam.dist * .3);
+  const rays = close ? [tgt, tgt.clone().add(side), tgt.clone().sub(side), tgt.clone().add(new THREE.Vector3(0, cam.dist * .15, 0))].map(t => ({ ray: new THREE.Ray(cp.clone(), t.clone().sub(cp).normalize()), len: t.distanceTo(cp) })) : [];
+  const hitP = new THREE.Vector3();
+  baked.forEach((grp, key) => {
+    const b = grp.userData.box, holds = cam.tx >= b.min.x && cam.tx <= b.max.x && cam.tz >= b.min.z && cam.tz <= b.max.z;   // 正在看的这栋不虚化
+    const f = close && !holds && (b.distanceToPoint(cp) < Math.max(1.2, cam.dist * .4) || rays.some(({ ray, len }) => ray.intersectBox(b, hitP) && hitP.distanceTo(cp) < len * .92));
+    if (f === faded.has(key)) return; f ? faded.add(key) : faded.delete(key);
+    grp.children.forEach(o => {
+      if (o.userData.pane) { o.visible = !f && night; return; }
+      if (o.userData.mat0 === undefined) o.userData.mat0 = o.material;
+      o.material = f ? (o.isMesh ? fadeFace : fadeLine) : o.userData.mat0;
+    });
+  });
+  req();
+}
+function updateCamera() { fadeDirty = true;
   clampCam();
   const R = cam.dist, ph = rad(cam.phi), th = rad(cam.theta);
   camera.position.set(cam.tx + R * Math.cos(ph) * Math.sin(th), R * Math.sin(ph), cam.tz + R * Math.cos(ph) * Math.cos(th));
@@ -498,7 +556,7 @@ const stackOf = (i, j) => cells.get(K(i, j)) || [];
 const levelOf = (i, j) => terrain.get(K(i, j)) || 0;
 function stackTop(i, j) { return levelOf(i, j) * config.digLevel + stackOf(i, j).reduce((a, f) => a + f.h, 0); }
 function canPlace(i, j) {
-  if (i < 0 || j < 0 || i >= N || j >= N || roads.has(K(i, j))) return false;
+  if (i < 0 || j < 0 || i >= N || j >= N || roads.has(K(i, j)) || water.has(K(i, j))) return false;
   const st = stackOf(i, j), top = st[st.length - 1];
   return !(top && FLOORS.get(top.t) && FLOORS.get(top.t).cap);
 }
@@ -559,7 +617,8 @@ function bakeCell(key) {
   add(B.outline, g => new THREE.LineSegments(g, lineMat));
   add(B.facade, g => new THREE.LineSegments(g, facadeMat));
   add(B.panes, g => { const m = new THREE.Mesh(g, paneMat); m.userData.pane = true; m.visible = night; return m; });
-  bakeGroup.add(grp); baked.set(key, grp);
+  grp.userData.box = new THREE.Box3().setFromObject(grp); grp.userData.key = key;
+  bakeGroup.add(grp); baked.set(key, grp); fadeDirty = true;
 }
 /* 贴图几何：在楼层本地坐标的第 d 个面上、沿面位置 u 处，返回 { lines, pane } */
 function decalGeo(f, d, u, type) {
@@ -799,7 +858,7 @@ function rebuildRoads() {
   const tri = [], mark = [], edge = [], L = config.digLevel;
   const quad = (a, b, c, d) => tri.push(...a, ...b, ...c, ...a, ...c, ...d);
   roads.forEach(key => {
-    const [i, j] = key.split(",").map(Number), x0 = i - HALF, z0 = j - HALF, x1 = x0 + 1, z1 = z0 + 1, cx = x0 + .5, cz = z0 + .5, y = levelOf(i, j) * L + .003;
+    const [i, j] = key.split(",").map(Number), x0 = i - HALF, z0 = j - HALF, x1 = x0 + 1, z1 = z0 + 1, cx = x0 + .5, cz = z0 + .5, y = (water.has(key) ? Math.max(0, levelOf(i, j)) : levelOf(i, j)) * L + .003;
     quad([x0, y, z0], [x0, y, z1], [x1, y, z1], [x1, y, z0]);
     const nb = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([a, b]) => roads.has(K(i + a, j + b)) && levelOf(i + a, j + b) === levelOf(i, j));
     const side = [[[x1, z0], [x1, z1]], [[x0, z0], [x0, z1]], [[x0, z1], [x1, z1]], [[x0, z0], [x1, z0]]];
@@ -837,12 +896,51 @@ function genTerrain(seed = Date.now()) {
   const n1 = lattice(14), n2 = lattice(6);
   for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
     const d = Math.min(i, j, N - 1 - i, N - 1 - j); if (d >= band) continue;
-    const e = Math.pow(1 - d / band, 1.4), nz = n1(i, j) * .7 + n2(i, j) * .3;
-    const h = Math.round(e * 6 + (nz - .5) * 10 * e - (d > band * .55 && nz < .32 ? 2 : 0));
+    const e = Math.pow(1 - d / band, 1.25), nz = n1(i, j) * .7 + n2(i, j) * .3;
+    const h = Math.round(e * 55 + (nz - .5) * 50 * e + Math.max(0, nz - .6) * 120 * e - (d > band * .6 && nz < .3 ? 2 : 0));
     const hc = Math.max(-config.digMax, Math.min(config.raiseMax, h)); if (hc) out.push([i, j, hc]);
   }
   return out;
 }
+/* 河流：北边山谷发源，沿切出的山谷一级级下降，进城后沿一条南北向街道（替代那条路）穿城，再穿南边山谷流出 */
+function genRiver(T, seed) {
+  const r = rng(seed + 7), c = HALF, out = new Map(), L = (i, j) => T.get(K(i, j)) || 0;
+  const pts = [[c + 40, 0], [c + 34, 16], [c + 24, 34], [c + 17, 52], [c + 13, c - 30], [c + 13, c + 30], [c + 18, c + 46], [c + 26, N - 36], [c + 16, N - 18], [c + 20, N - 1]];
+  const cityIn = 4, cityOut = 5, samples = []; let len = 0, sIn = 0;
+  for (let q = 0; q < pts.length - 1; q++) {
+    const [ax, az] = pts[q], [bx, bz] = pts[q + 1], seg = Math.hypot(bx - ax, bz - az), n = Math.ceil(seg / .35), city = q === cityIn;
+    if (q === cityIn) sIn = len;
+    for (let k = 0; k < n; k++) { const t = k / n, wob = city ? 0 : Math.sin((len + seg * t) * .23 + r() * .3) * 1.6;
+      samples.push([ax + (bx - ax) * t + wob * (bz - az) / seg, az + (bz - az) * t - wob * (bx - ax) / seg, len + seg * t]); }
+    len += seg;
+  }
+  const src = 48;
+  samples.forEach(([x, z, sl]) => {
+    const lvl = sl < sIn ? Math.round(src + (-1 - src) * (sl / sIn)) || -1 : -1;
+    for (let i = Math.floor(x - 2); i <= Math.ceil(x + 2); i++) for (let j = Math.floor(z - 2); j <= Math.ceil(z + 2); j++) {
+      if (!inBoard(i, j) || Math.hypot(i + .5 - x, j + .5 - z) > 1.05) continue;
+      const k = K(i, j); out.set(k, Math.min(out.has(k) ? out.get(k) : 99, lvl));
+    }
+  });
+  out.forEach((lvl, k) => T.set(k, lvl));
+  /* 切山谷：河两侧的山按离河距离逐级抬起，不会比河高出太多 */
+  out.forEach((lvl, k) => { const [i, j] = k.split(",").map(Number);
+    for (let a = -6; a <= 6; a++) for (let b = -6; b <= 6; b++) { const kk = K(i + a, j + b); if (out.has(kk) || !inBoard(i + a, j + b)) continue;
+      const lim = Math.max(lvl, 0) + 1 + Math.max(Math.abs(a), Math.abs(b)) * 5, cur = L(i + a, j + b); if (cur > lim) T.set(kk, lim); } });
+  return out;
+}
+function genWorld(seed) {
+  const T = new Map(genTerrain(seed).map(([i, j, h]) => [K(i, j), h])), river = genRiver(T, seed);
+  return { terrain: [...T].filter(([, h]) => h).map(([k, h]) => [...k.split(",").map(Number), h]), water: [...river.keys()],
+    grass: [...T].filter(([k, h]) => h > 0 && !river.has(k)).map(([k]) => k) };
+}
+function setWorld(w) {
+  terrain.clear(); water.clear(); grass.clear();
+  w.terrain.forEach(([i, j, h]) => { if (h) terrain.set(K(i, j), h); }); w.water.forEach(k => water.add(k)); w.grass.forEach(k => grass.add(k));
+  rebuildTerrain(); if (roadMesh) rebuildRoads();
+}
+function addGrass(i, j) { if (!inBoard(i, j) || grass.has(K(i, j)) || water.has(K(i, j))) return false; grass.add(K(i, j)); rebuildTerrain(); record({ op: "grass+", i, j }); changed(); return true; }
+function removeGrass(i, j) { if (!grass.delete(K(i, j))) return false; rebuildTerrain(); record({ op: "grass-", i, j }); changed(); return true; }
 function terrainSnapshot() { return [...terrain].map(([k, h]) => [...k.split(",").map(Number), h]); }
 function setTerrain(list) { terrain.clear(); list.forEach(([i, j, h]) => { if (h) terrain.set(K(i, j), h); }); rebuildTerrain(); }
 function randomTerrain(seed) {                          // 有楼的格子保持原高度
@@ -865,6 +963,7 @@ function apply(a, inverse) {
     else { const g = popFloor(a.i, a.j); if (g && a.op === "add") a.f = g; }
   } else if (a.op === "wing+" || a.op === "wing-") { wingAdd ? attachWing(a.i, a.j, a.k, a.w) : detachWing(a.i, a.j, a.k, a.w.d, a.w.u || 0); }
   else if (a.op === "dig" || a.op === "fill") { setLevel(a.i, a.j, levelOf(a.i, a.j) + ((a.op === "dig") !== inverse ? -1 : 1)); }
+  else if (a.op === "grass+" || a.op === "grass-") { if ((a.op === "grass+") !== inverse) grass.add(K(a.i, a.j)); else grass.delete(K(a.i, a.j)); rebuildTerrain(); }
   else if (a.op === "road+" || a.op === "road-") { if ((a.op === "road+") !== inverse) roads.add(K(a.i, a.j)); else roads.delete(K(a.i, a.j)); rebuildRoads(); }
   else if (a.op === "decal+" || a.op === "decal-") { if ((a.op === "decal+") !== inverse) attachDecal(a.i, a.j, a.k, a.dc); else detachDecal(a.i, a.j, a.k, a.dc.d, a.dc.type, a.dc.u); }
   else if (a.op === "block+" || a.op === "block-") { if ((a.op === "block+") !== inverse) addBlockObj(a.b); else { const b = findBlock(a.b); if (b) dropBlock(b); } }
@@ -876,7 +975,7 @@ function apply(a, inverse) {
 function undo() { const a = hist.pop(); if (!a) return false; apply(a, true); redoStack.push(a); changed(); emit("undo", a); return true; }
 function redo() { const a = redoStack.pop(); if (!a) return false; apply(a, false); hist.push(a); changed(); emit("redo", a); return true; }
 function clearCity() {
-  [...bridges].forEach(dropBridge); [...blocks].forEach(dropBlock); terrain.clear(); roads.clear(); if (roadMesh) rebuildRoads();
+  [...bridges].forEach(dropBridge); [...blocks].forEach(dropBlock); terrain.clear(); roads.clear(); water.clear(); grass.clear(); if (roadMesh) rebuildRoads();
   baked.forEach(g => { bakeGroup && bakeGroup.remove(g); g.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }); baked.clear(); dirtyCells.clear(); if (pitMesh) rebuildTerrain();
   [...cells.keys()].forEach(k => { const [i, j] = k.split(",").map(Number); while (popFloor(i, j)); });
   hist.length = 0; redoStack.length = 0; changed();
@@ -887,7 +986,7 @@ function exportJSON() {
   const out = [];
   cells.forEach((st, k) => { const [i, j] = k.split(",").map(Number);
     out.push([i, j, st.map(f => [f.t, f.s, f.v, f.r || 0, f.wings.map(w => [w.d, w.t, w.s, w.v, w.u || 0]), f.z || 1, f.decals.map(x => [x.d, x.u, x.type])])]); });
-  return { v: 5, cells: out, bridges: bridges.map(b => [...b.a, ...b.b, b.t, b.v]), terrain: terrainSnapshot(), seeded, roads: [...roads].map(k => k.split(",").map(Number)), blocks: blocks.map(b => [b.x, b.z, b.y, b.t, b.v]) };
+  return { v: 5, cells: out, bridges: bridges.map(b => [...b.a, ...b.b, b.t, b.v]), terrain: terrainSnapshot(), water: [...water], grass: [...grass], seeded, roads: [...roads].map(k => k.split(",").map(Number)), blocks: blocks.map(b => [b.x, b.z, b.y, b.t, b.v]) };
 }
 function importJSON(d) {
   clearCity();
@@ -895,6 +994,7 @@ function importJSON(d) {
   ((d && d.terrain) || []).forEach(([i, j, h]) => { if (h) terrain.set(K(i, j), Math.max(-config.digMax, Math.min(config.raiseMax, h))); });
   if (pitMesh) rebuildTerrain();
   seeded = (d && d.seeded) || 0;
+  ((d && d.water) || []).forEach(k => water.add(k)); ((d && d.grass) || []).forEach(k => grass.add(k)); if (pitMesh) rebuildTerrain();
   ((d && d.roads) || []).forEach(([i, j]) => roads.add(K(i, j))); if (roadMesh) rebuildRoads();
   ((d && d.cells) || []).forEach(([i, j, st]) => st.forEach(([t, s, v, r, ws, z, dcs]) => {
     if (FLOORS.has(t) && SIZES[s] && canPlace(i, j)) addFloor(i, j, { t, s, v, r: r || 0, z: z || 1, decals: (dcs || []).map(([d2, u2, ty]) => ({ d: d2, u: u2, type: ty })), wings: (ws || []).filter(w => FLOORS.has(w[1])).map(([d2, t2, s2, v2, u2]) => ({ d: d2, t: t2, s: s2, v: v2, u: u2 || 0 })) }); }));
@@ -910,7 +1010,8 @@ const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), plane = new THREE.
 function setRay(ev) { const r = renderer.domElement.getBoundingClientRect(); ndc.set((ev.clientX - r.left) / r.width * 2 - 1, -(ev.clientY - r.top) / r.height * 2 + 1); ray.setFromCamera(ndc, camera); }
 function pick(ev) {
   setRay(ev);
-  const hit = ray.intersectObjects(pitMesh ? [...hitMeshes, pitMesh] : hitMeshes, false)[0];
+  const hit = ray.intersectObjects(pitMesh ? [...hitMeshes, pitMesh] : hitMeshes, false)
+    .find(h => { const u = h.object.userData; return !(u && u.i != null && faded.has(K(u.i, u.j))); });
   if (hit && hit.object === pitMesh) {
     const p = hit.point.clone().addScaledVector(ray.ray.direction, Math.abs(hit.face.normal.y) > .5 ? 0 : .01), i = Math.floor(p.x + HALF), j = Math.floor(p.z + HALF);
     return inBoard(i, j) ? { kind: "top", i, j, p: hit.point.clone() } : null;
@@ -958,7 +1059,7 @@ function updateGhost() {
   if (hover.kind === "bridge") { highlight(hover.ref.obj); return req(); }
   if (hover.kind === "wing") { const f = stackOf(hover.i, hover.j)[hover.k], w = f && f.wings.find(x => x.d === hover.d && Math.abs((x.u || 0) - hover.u) < 1e-6); if (w) highlight(w.obj); return req(); }
   if (sel.decal) {                                                  // 贴图模式
-    if (sel.decal === "street") { if (hover.kind === "top" && hover.i != null) { const ok = !roads.has(K(hover.i, hover.j)) && !stackOf(hover.i, hover.j).length;
+    if (sel.decal === "street" || sel.decal === "grass") { if (hover.kind === "top" && hover.i != null) { const k = K(hover.i, hover.j), ok = sel.decal === "grass" ? !grass.has(k) && !water.has(k) : !roads.has(k) && !stackOf(hover.i, hover.j).length;
       hoverBox.position.set(hover.i - HALF + .5, stackTop(hover.i, hover.j) + .006, hover.j - HALF + .5); hoverBox.material.color.set(ok ? accent() : "#c0344d"); hoverBox.visible = true; } }
     else if (hover.kind === "side") { const f = stackOf(hover.i, hover.j)[hover.k];
       if (f) { ghost.add(decalObj(f, { d: hover.d, u: decalU(f, sel.decal, hover.u), type: sel.decal }, ghostLine, true));
@@ -1083,6 +1184,7 @@ function doPlace() {
   if (!hover) return;
   if (sel.decal) {
     if (sel.decal === "street") { if (hover.kind === "top" && hover.i != null) addRoad(hover.i, hover.j); }
+    else if (sel.decal === "grass") { if (hover.kind === "top" && hover.i != null) addGrass(hover.i, hover.j); }
     else if (hover.kind === "side") addDecal(hover.i, hover.j, hover.k, hover.d, hover.u, sel.decal);
     return;
   }
@@ -1093,6 +1195,7 @@ function doPlace() {
 function doDelete() {
   if (!hover) return;
   if (sel.decal === "street" && hover.kind === "top" && roads.has(K(hover.i, hover.j))) { removeRoad(hover.i, hover.j); return; }
+  if (sel.decal === "grass" && hover.kind === "top" && grass.has(K(hover.i, hover.j))) { removeGrass(hover.i, hover.j); return; }
   if ((sel.decal === "window" || sel.decal === "door") && hover.kind === "side" && removeDecal(hover.i, hover.j, hover.k, hover.d, hover.u, sel.decal)) return;
   if (hover.kind === "top" && hover.i != null && roads.has(K(hover.i, hover.j)) && !stackOf(hover.i, hover.j).length) { removeRoad(hover.i, hover.j); return; }
   if (hover.kind === "bridge") { if (bridges.includes(hover.ref)) disconnect(hover.ref); return; }
@@ -1144,7 +1247,8 @@ const DI = p => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stro
 const DECALS = [
   ["street", "街道", DI('<path d="M7 3 4 21M17 3l3 18"/><path d="M12 4v3M12 10.5v3M12 17v3"/>')],
   ["window", "窗户贴图", DI('<rect x="7" y="5" width="10" height="14"/><path d="M12 5v14M7 13.5h10"/>')],
-  ["door", "门贴图", DI('<path d="M7 21V4h10v17M4 21h16"/><path d="M14.5 12.5v1.5"/>')]];
+  ["door", "门贴图", DI('<path d="M7 21V4h10v17M4 21h16"/><path d="M14.5 12.5v1.5"/>')],
+  ["grass", "草地", DI('<path d="M3 20h18"/><path d="M6 20c0-3 1-5 2-7M9 20c0-4 .5-6 1.5-9M13 20c0-3 1.5-6 3-8M17 20c0-2 .5-4 2-5"/>')]];
 const extraButtons = [];
 function addButton(b) { extraButtons.push(b); renderBar(); }
 function renderBar() {
@@ -1276,10 +1380,11 @@ function buildUI() {
 /* 默认城区：地标放在中心附近的固定位置，四周撒随机楼；不进撤销栈 */
 /* 默认城区：以棋盘中心为原点，每 6 格一条路（8×8 个 5×5 街区）；9 个地标各占一个街区，
    其余街区按离中心远近随机撒楼（越近越密），楼都不压路。不进撤销栈 */
-const SEED_VER = 2;
+const SEED_VER = 3;
 function seedCity(seed) {
   const r = rng(seed), c = HALF, S = 6, B = 4;
-  for (let a = -B * S; a <= B * S; a++) for (let b = -B * S; b <= B * S; b++) if (a % S === 0 || b % S === 0) roads.add(K(c + a, c + b));
+  for (let a = -B * S; a <= B * S; a++) for (let b = -B * S; b <= B * S; b++) if (a % S === 0 || b % S === 0) {
+    const k = K(c + a, c + b); if (water.has(k) && b % S !== 0) continue; roads.add(k); }
   rebuildRoads();
   const cellOf = (bx, bz, ox, oz) => [c + bx * S + ox, c + bz * S + oz];        // 街区 (bx,bz) 内第 (ox,oz) 格，ox/oz ∈ 1..5
   const marks = [["burj", 0, 0, 3, 3], ["shanghai", 1, 0, 3, 3], ["empire", -1, 0, 3, 3], ["taipei101", 0, 1, 3, 3], ["onewtc", 1, 1, 3, 3],
@@ -1290,7 +1395,7 @@ function seedCity(seed) {
     if (taken.has(bx + "," + bz)) continue;
     const dist = Math.max(Math.abs(bx + .5), Math.abs(bz + .5)), p = .22 - dist * .045;
     for (let ox = 1; ox <= 5; ox++) for (let oz = 1; oz <= 5; oz++) { const [i, j] = cellOf(bx, bz, ox, oz);
-      if (r() < p && !stackOf(i, j).length) placeTemplate(i, j, "random", Math.floor(r() * 1e9)); }
+      if (r() < p && !stackOf(i, j).length && !water.has(K(i, j))) placeTemplate(i, j, "random", Math.floor(r() * 1e9)); }
   }
   seeded = SEED_VER; hist.length = 0; redoStack.length = 0; changed();
 }
@@ -1307,7 +1412,8 @@ function start() {
   let saved = null; try { saved = localStorage.getItem(KEY_CITY); } catch (e) { }
   let old = null; try { old = saved && JSON.parse(saved); } catch (e) { }
   const oldSeed = old && !old.roads && (old.cells || []).length === 88 && (old.cells || []).reduce((a, c) => a + c[2].length, 0) === 3803;
-  if (saved && !oldSeed) load(); else setTerrain(genTerrain(20261007));
+  const stale = old && old.seeded && old.seeded < SEED_VER;                       // 没改动过的旧版默认城区：换成新版
+  if (saved && !oldSeed && !stale) load(); else setWorld(genWorld(20261007));
   if (!cells.size && !blocks.length) seedCity(20261007);
   updateGhost();
   emit("ready", api);
@@ -1324,12 +1430,12 @@ function start() {
    CityGame.three / scene / camera / renderer / cells / bridges / config / sizes / helpers */
 const api = {
   registerFloor, registerTemplate, placeTemplate, addButton, on, off, place, remove, addWing, removeWing, connect, dig, fill,
-  addRoad, removeRoad, addDecal, removeDecal, raise: fill, lower: dig, randomTerrain, genTerrain, group, placeBlock, removeBlock, mergeNeighbor, seedCity, undo, redo, clear: clearCity,
+  addRoad, removeRoad, addGrass, removeGrass, genWorld, setWorld, addDecal, removeDecal, raise: fill, lower: dig, randomTerrain, genTerrain, group, placeBlock, removeBlock, mergeNeighbor, seedCity, undo, redo, clear: clearCity,
   select, expand, collapse, rotateBy, exportJSON, importJSON, config, sizes: SIZES, helpers, three: THREE,
   get floors() { return ORDER.map(id => FLOORS.get(id)); },
   get selected() { return Object.assign({}, sel); },
   get scene() { return scene; }, get camera() { return camera; }, get renderer() { return renderer; },
-  get cells() { return cells; }, get terrain() { return terrain; }, get roads() { return roads; }, get blocks() { return blocks; }, get templates() { return TORDER.map(id => TEMPLATES.get(id)); }, get bridges() { return bridges; }, get night() { return night; }, get hover() { return hover; },
+  get cells() { return cells; }, get terrain() { return terrain; }, get roads() { return roads; }, get water() { return water; }, get grass() { return grass; }, get blocks() { return blocks; }, get templates() { return TORDER.map(id => TEMPLATES.get(id)); }, get bridges() { return bridges; }, get night() { return night; }, get hover() { return hover; },
   refresh() { updateCamera(); req(); }
 };
 window.CityGame = api;
