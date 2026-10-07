@@ -1,9 +1,21 @@
-# Cloudflare Workers 静态站点配置
-# 把整个仓库根目录作为静态资源发布（本站是纯静态页面，无需构建）
+# Cloudflare Workers 配置
+# 整个仓库根目录作为静态资源发布（纯静态页面，无需构建）；/api/* 交给 worker/index.js（评论与点赞）
 # 注意：name 必须与 Cloudflare 上的 Worker 名一致，否则构建会部署不到位
 name = "knowledge-base"
+main = "worker/index.js"
 compatibility_date = "2026-08-01"
 workers_dev = true
 
 [assets]
 directory = "./"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
+
+# 评论 / 点赞的存储：Durable Object（自带 SQLite），部署时自动创建
+[[durable_objects.bindings]]
+name = "SOCIAL"
+class_name = "Social"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Social"]
