@@ -32,10 +32,10 @@ const config = {
   distMin: 1.2, distMax: 420,                       // 相机到中轴点的距离范围（缩放）
   rotStep: 15,                                    // R 键每次顺时针旋转的角度
   damping: .22,                                   // 旋转缓动（0–1，越大越跟手）
-  recenterNear: 30,
+  recenterNear: 30,                               // 相机距离小于它时视野可移到棋盘任意位置，大于它逐步回中
   homeView: { tx: -1, tz: -1, theta: 45, phi: 37, dist: 43 },   // 打开网站时右下角的视角：拉近看中心城区
   builtinWindows: false,                          // 楼层 / 方块是否自带窗（默认不带，窗户用贴图加）
-  fadeNear: 12, fadeReach: 6,                     // 相机距离小于 fadeNear 才虚化；只虚化离镜头 fadeReach 格以内挡视线的楼                               // 相机距离小于它时视野可移到棋盘任意位置，大于它逐步回中
+  fadeNear: 5, fadeReach: 2.5,                    // 相机距离小于 fadeNear 才虚化；只虚化离镜头 fadeReach 格以内挡视线的楼
   thickness: 3,                                   // 棋盘厚度（格）
   digLevel: 1 / 6, digMax: 3, raiseMax: 300,       // 地块每层高度 = 小方块边长 = 一层楼高（1/6 格，三者对齐，叠起来没有缝）、最多下挖 / 升高几层
   terrainBand: 40,                                // 随机地形只在离边缘这么多格以内，越靠边越高
@@ -2007,7 +2007,7 @@ const api = {
   get scene() { return scene; }, get camera() { return camera; }, get renderer() { return renderer; },
   get cells() { return cells; }, get terrain() { return terrain; }, get columns() { return cols; }, get roads() { return roads; }, get water() { return water; }, get grass() { return grass; }, get blocks() { return blocks; }, get templates() { return TORDER.map(id => TEMPLATES.get(id)); }, get bridges() { return bridges; }, get night() { return night; }, get hover() { return hover; },
   refresh() { updateCamera(); req(); },
-  renderNow() { updateCamera(); if (fadeDirty) { fadeDirty = false; updateFade(); } fadeGrid(); renderer.render(scene, camera); }   // 立即按真实一帧渲染（截图用）
+  renderNow() { if (dirtyCells.size) { dirtyCells.forEach(bakeCell); dirtyCells.clear(); } updateCamera(); if (fadeDirty) { fadeDirty = false; updateFade(); } fadeGrid(); renderer.render(scene, camera); }   // 立即按真实一帧渲染（截图用）
 };
 window.CityGame = api;
 emit("loaded", api);
