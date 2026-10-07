@@ -7,7 +7,8 @@
    个人空间 —— 动态 / 知识库 / 收藏，单文件 + data.json
   ------------------------------------------------------------
    · 访客：只读，看不到编辑入口
-   · 站主：访问一次带 #edit 的网址解锁编辑（存本机）
+   · 站主：打开带 #edit 的网址，填入对本仓库有写权限的 GitHub 令牌（向 GitHub 校验）后解锁编辑；
+           每次打开都会重新校验，令牌失效或被清除即自动上锁
            可 发帖/编辑/删除/隐藏、导入文件、改文件夹结构、
            重命名、隐藏、下载；改完可「发布」到线上或「导出」备份
    · 内容源 = data.json（发布即写回 GitHub）；离线时用内置 SEED
@@ -996,8 +997,32 @@ const SUN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-wid
 function applyTheme(t){document.documentElement.setAttribute("data-theme",t);$("#themeBtn").innerHTML=t==="dark"?SUN:MOON;try{localStorage.setItem(KEY_THEME,t)}catch(e){}}
 (function(){let t;try{t=localStorage.getItem(KEY_THEME)}catch(e){}if(!t)t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";applyTheme(t);})();
 
-let ownerUnlocked=false;
-(function(){try{if(location.hash.replace("#","").toLowerCase()==="edit"){localStorage.setItem(KEY_OWNER,"1");history.replaceState(null,"",location.pathname+location.search);}ownerUnlocked=localStorage.getItem(KEY_OWNER)==="1";}catch(e){}})();
+/* 站主验证：#edit 只是入口；必须有对本仓库有写权限的 GitHub 令牌才解锁（本机没有令牌就一定是锁着的） */
+let ownerUnlocked=false,wantUnlock=false;
+(function(){try{
+  if(location.hash.replace("#","").toLowerCase()==="edit"){wantUnlock=true;history.replaceState(null,"",location.pathname+location.search);}
+  ownerUnlocked=localStorage.getItem(KEY_OWNER)==="1"&&!!ghCfg().token;
+  if(!ownerUnlocked)localStorage.removeItem(KEY_OWNER);
+}catch(e){}})();
+/* 向 GitHub 校验：true = 有写权限；false = 令牌无效 / 无权限；null = 网络问题（不改变现状） */
+async function verifyOwner(token){
+  const c=ghCfg();
+  try{const r=await fetch("https://api.github.com/repos/"+encodeURIComponent(c.owner)+"/"+encodeURIComponent(c.repo),{headers:{Authorization:"Bearer "+token,Accept:"application/vnd.github+json"},cache:"no-store"});
+    if(r.status===401||r.status===403||r.status===404)return false;if(!r.ok)return null;
+    const j=await r.json();return !!(j.permissions&&(j.permissions.push||j.permissions.admin));}catch(e){return null;}
+}
+function lockOwner(){ownerUnlocked=false;try{localStorage.removeItem(KEY_OWNER)}catch(e){}if(state.editMode)setEdit(false);$("#editBtn").style.display="none";}
+function unlockOwner(){ownerUnlocked=true;try{localStorage.setItem(KEY_OWNER,"1")}catch(e){}$("#editBtn").style.display="";}
+function openUnlock(){
+  const bg=modal('<h3>站主验证</h3><form id="ulForm"><div class="field"><label>GitHub 令牌</label><input name="token" type="password" autocomplete="off" required></div>'
+    +'<div class="modal-actions"><button type="button" class="btn ghost" data-action="modal-close">取消</button><button type="submit" class="btn">解锁</button></div></form>');
+  const form=bg.querySelector("#ulForm");form.querySelector("input").focus();
+  form.addEventListener("submit",async e=>{e.preventDefault();const t=(new FormData(form).get("token")||"").trim();if(!t)return;
+    const btn=form.querySelector("[type=submit]");btn.disabled=true;
+    const ok=await verifyOwner(t);btn.disabled=false;
+    if(ok){const c=ghCfg();c.token=t;localStorage.setItem(KEY_GH,JSON.stringify(c));unlockOwner();closeEl(bg);toast("已解锁编辑");}
+    else toast(ok===false?"令牌无效或没有写权限":"网络不通，稍后再试");});
+}
 
 let state={view:"feed",feedOpen:null,kbSel:null,favFolder:0,favItem:null,expanded:new Set(),editMode:false,editingPost:null,editingFile:false,composerText:"",composerImgText:"",imgBuf:[],composerImgs:[],imgTarget:"c",imgsOpen:new Set(),pv:null,fmtOn:new Set(),feedMonth:"",moving:null,fileBuf:null};
 
@@ -1080,7 +1105,7 @@ function syncToolbarH(){
   if(rail){rail.style.top=top+"px";rail.style.height="calc(83.3333vh - "+(top+28)+"px)";}
 }
 addEventListener("resize",syncToolbarH);
-function setEdit(on){state.editMode=on;document.body.classList.toggle("editing",on);$("#editBtn").classList.toggle("on",on);render();updateBar();requestAnimationFrame(syncToolbarH);}
+function setEdit(on){if(on&&!ownerUnlocked)return;state.editMode=on;document.body.classList.toggle("editing",on);$("#editBtn").classList.toggle("on",on);render();updateBar();requestAnimationFrame(syncToolbarH);}
 function hasDraft(){try{const d=JSON.parse(localStorage.getItem(KEY_DRAFT));return !!(d&&d.feed)}catch(e){return false}}
 function updateBar(){const s=$("#tbState"),t=$("#tbText");if(!s)return;s.classList.toggle("dirty",dirty);
   t.textContent=dirty?"有未发布的修改":(hasDraft()?"显示线上版本（有未发布草稿）":"已同步线上");
@@ -1680,7 +1705,7 @@ document.addEventListener("click",e=>{
   switch(a){
     case "theme":applyTheme(document.documentElement.getAttribute("data-theme")==="dark"?"light":"dark");return;
     case "view":if(state.editMode)captureComposer();state.view=el.dataset.view;state.feedMonth="";state.feedOpen=null;state.favItem=null;state.editingPost=null;state.editingFile=false;render();window.scrollTo(0,0);return;
-    case "edit-toggle":if(state.editMode){captureComposer();setEdit(false);}else setEdit(true);return;
+    case "edit-toggle":if(state.editMode){captureComposer();setEdit(false);}else if(ownerUnlocked)setEdit(true);return;
     case "publish":publish();return;
     case "export":doExport();return;
     case "ghsettings":openSettings();return;
@@ -1696,7 +1721,7 @@ document.addEventListener("click",e=>{
     case "discard":if(confirm("丢弃本机未发布的草稿，并重新载入线上已发布的内容？")){clearDraft();boot();toast("已重载线上内容");}return;
     case "restore":{try{const d=JSON.parse(localStorage.getItem(KEY_DRAFT));if(d&&d.feed){DATA=d;ensureIds();if(!DATA.profile)DATA.profile={name:"我",avatar:""};dirty=true;updateBar();render();toast("已恢复未发布的草稿");}}catch(e){toast("没有可恢复的草稿");}return;}
     case "modal-close":closeModals();return;
-    case "gh-clear":{const c=ghCfg();c.token="";localStorage.setItem(KEY_GH,JSON.stringify(c));closeModals();toast("已清除令牌");return;}
+    case "gh-clear":{const c=ghCfg();c.token="";localStorage.setItem(KEY_GH,JSON.stringify(c));closeModals();lockOwner();toast("已清除令牌");return;}
 
     case "feed-like":{store.likes[id]=!store.likes[id];saveStore();el.classList.toggle("liked",store.likes[id]);el.querySelector("span").textContent=likeCount(id)||"赞";if(store.likes[id]){el.classList.add("pop");setTimeout(()=>el.classList.remove("pop"),300);}return;}
     case "feed-open":if(state.editMode&&state.editingPost)return;state.feedOpen=id;render();window.scrollTo(0,0);return;
@@ -2316,7 +2341,9 @@ async function boot(){
   if(!Array.isArray(DATA.contacts)||!DATA.contacts.length)DATA.contacts=JSON.parse(JSON.stringify(CONTACT_SEED));
   state.expanded=new Set();(function w(nodes){nodes.forEach(n=>{if(n.type==="folder"){state.expanded.add(n.id);w(n.children||[]);}});})(DATA.kb);
   if(!state.kbSel||!locate(state.kbSel))state.kbSel=firstFile();
-  if(ownerUnlocked)$("#editBtn").style.display="";
+  if(ownerUnlocked){$("#editBtn").style.display="";
+    verifyOwner(ghCfg().token).then(ok=>{if(ok===false){lockOwner();toast("编辑权限已失效");}});}   // 每次打开后台重新校验
+  if(wantUnlock&&!ownerUnlocked)setTimeout(openUnlock,300);
   if(/^#\//.test(location.hash))applyRoute();else _routeReady=false;
   updateBar();render();_routeReady=true;
 }
