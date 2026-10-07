@@ -35,6 +35,7 @@ const config = {
   recenterNear: 30,                               // 相机距离小于它时视野可移到棋盘任意位置，大于它逐步回中
   homeView: { tx: -1, tz: -1, theta: 45, phi: 37, dist: 43 },   // 打开网站时右下角的视角：拉近看中心城区
   builtinWindows: false,                          // 楼层 / 方块是否自带窗（默认不带，窗户用贴图加）
+  waterFlow: true,                                // 岸边水沫短线缓慢顺流（false = 水面完全静止）
   fadeNear: 5, fadeReach: 2.5,                    // 相机距离小于 fadeNear 才虚化；只虚化离镜头 fadeReach 格以内挡视线的楼
   thickness: 3,                                   // 棋盘厚度（格）
   digLevel: 1 / 6, digMax: 3, raiseMax: 300,       // 地块每层高度 = 小方块边长 = 一层楼高（1/6 格，三者对齐，叠起来没有缝）、最多下挖 / 升高几层
@@ -355,7 +356,7 @@ if (!FLOORS.has(sel.t) || FLOORS.get(sel.t).hidden) sel.t = "grid";
 sel.view = true; sel.tpl = null; sel.decal = null;
 if (sel.wsz === "L") sel.wsz = "T"; if (!["S", "M", "T"].includes(sel.wsz)) sel.wsz = "M"; if (sel.wlit == null) sel.wlit = 1;
 const decalType = () => sel.decal === "window" ? "win:" + sel.wsz + ":" + (sel.wlit ? 1 : 0) + ":" + (sel.wrot ? 1 : 0) : sel.decal;                // 打开时默认观赏模式（鼠标按钮）
-const paneLight = { value: 0 }, waterTime = { value: 0 }; let paneVis = null;
+const paneLight = { value: 0 }, waterTime = { value: 0 }, waterFlowOn = { value: 1 }; let paneVis = null;
 let night = false, hover = null, expanded = false, tAnchor = null, drag = null;
 
 /* ---------------- three.js 场景 ---------------- */
@@ -399,25 +400,31 @@ function initThree() {
   grassMat = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   waterMat = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, side: THREE.DoubleSide });
   /* flow 属性：xy = 水面流向，z = 0 水面 / 1 落差面（瀑布）/ 2 水沫 */
+  /* 风格化水面（参考 Godot / Unity 风格化水：浅到深的色带 + 岸边水沫）：
+     flow.xy = 水流方向，flow.z = 0 水面 / 1 落差面 / 2 落差水沫；bank = 这格四边（+x −x +z −z）哪几边是岸 */
   waterMat.onBeforeCompile = sh => {
-    sh.uniforms.uTime = waterTime;
-    sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nattribute vec3 flow;\nvarying vec3 vFlow;\nvarying vec3 vWPos;")
-      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvFlow = flow;\nvWPos = position;");
-    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nuniform float uTime;\nvarying vec3 vFlow;\nvarying vec3 vWPos;")
+    sh.uniforms.uTime = waterTime; sh.uniforms.uFlow = waterFlowOn;
+    sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nattribute vec3 flow;\nattribute vec4 bank;\nvarying vec3 vFlow;\nvarying vec4 vBank;\nvarying vec3 vWPos;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvFlow = flow;\nvBank = bank;\nvWPos = position;");
+    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nuniform float uTime;\nuniform float uFlow;\nvarying vec3 vFlow;\nvarying vec4 vBank;\nvarying vec3 vWPos;")
       .replace("#include <color_fragment>", [
         "#include <color_fragment>",
-        "{ vec2 fl = length(vFlow.xy) > 0.01 ? normalize(vFlow.xy) : vec2(0.0, 1.0);",
-        "  float al = dot(vWPos.xz, fl), ac = dot(vWPos.xz, vec2(-fl.y, fl.x)), hi = 0.0;",
-        "  if (vFlow.z < 0.5) {",                                   // 水面：顺流方向一段段的细波纹，往下游漂
-        "    float s = sin(al * 7.0 - uTime * 1.6 + sin(ac * 5.0 + al * 1.3) * 1.4);",
-        "    hi = smoothstep(0.9, 0.99, s) * smoothstep(0.35, 0.8, 0.5 + 0.5 * sin(ac * 9.0 + al * 0.7 + 1.3)) * 0.8;",
-        "  } else if (vFlow.z < 1.5) {",                            // 落差面：竖向水纹往下流
-        "    float s = sin(vWPos.y * 22.0 + uTime * 5.0 + sin((vWPos.x + vWPos.z) * 13.0) * 2.0);",
-        "    hi = smoothstep(0.55, 1.0, s) * 0.5;",
-        "  } else {",                                               // 水沫：几乎全白，轻微闪动
-        "    hi = 0.8 + 0.2 * sin(uTime * 3.0 + (vWPos.x + vWPos.z) * 25.0);",
-        "  }",
-        "  diffuseColor.rgb = mix(diffuseColor.rgb, diffuse, hi); }"].join("\n"));
+        "if (vFlow.z < 0.5) {",
+        "  vec2 c = fract(vWPos.xz + 95.0);",                               // 格内坐标 0..1
+        "  float d = 1.0, al = 0.0;",                                       // d：到最近岸边的距离；al：沿着那条岸的坐标
+        "  if (vBank.x > 0.5 && 1.0 - c.x < d) { d = 1.0 - c.x; al = vWPos.z; }",
+        "  if (vBank.y > 0.5 && c.x < d) { d = c.x; al = vWPos.z; }",
+        "  if (vBank.z > 0.5 && 1.0 - c.y < d) { d = 1.0 - c.y; al = vWPos.x; }",
+        "  if (vBank.w > 0.5 && c.y < d) { d = c.y; al = vWPos.x; }",
+        "  diffuseColor.rgb *= mix(1.1, 0.84, smoothstep(0.0, 0.42, d));",  // 靠岸浅、河心深
+        "  float foam = 1.0 - smoothstep(0.035, 0.06, d);",                 // 贴岸一条细水沫
+        "  vec2 fl = length(vFlow.xy) > 0.01 ? normalize(vFlow.xy) : vec2(0.0, 1.0);",
+        "  float sgn = abs(fl.x) > abs(fl.y) ? sign(fl.x) : sign(fl.y);",    // 短线顺水流方向移动
+        "  float dash = step(0.62, fract(al * 2.5 - sgn * uTime * 0.18 * uFlow)) * (1.0 - smoothstep(0.1, 0.13, d)) * smoothstep(0.08, 0.1, d);",
+        "  diffuseColor.rgb = mix(diffuseColor.rgb, diffuse, max(foam * 0.85, dash * 0.55));",
+        "} else if (vFlow.z > 1.5) {",
+        "  diffuseColor.rgb = mix(diffuseColor.rgb, diffuse, 0.85);",       // 落差边缘与落点的水沫
+        "}"].join("\n"));
   };
   terrainLine = new THREE.LineBasicMaterial({ color: 0x8d8fa0, transparent: true });
   terrainGroup = new THREE.Group(); scene.add(terrainGroup); pitMesh = terrainGroup;     // pitMesh 只作「地形已就绪」的标记
@@ -465,7 +472,7 @@ function initThree() {
     if (now - (loop.ck || 0) > 500) { loop.ck = now; updateClock(); }
     /* 编辑模式车辆停住，只在操作时重绘 */
     if (host && !document.hidden && (expanded ? sel.view : cityVisible) && now - carLast >= (expanded ? 0 : 50)) { stepCars(Math.min(.1, (now - carLast) / 1000)); carLast = now; }
-    if (host && !document.hidden && (expanded ? sel.view : cityVisible) && now - (loop.wt || 0) > 200) { loop.wt = now; waterTime.value = now / 1000; req(); }   // 水流约 5 帧/秒
+    if (host && !document.hidden && (expanded ? sel.view : cityVisible) && now - (loop.wt || 0) > 200) { loop.wt = now; waterFlowOn.value = config.waterFlow ? 1 : 0; if (config.waterFlow) { waterTime.value = now / 1000; req(); } }   // 水流约 5 帧/秒
     if (dirtyCells.size) { dirtyCells.forEach(bakeCell); dirtyCells.clear(); }
     if (fadeDirty) { fadeDirty = false; updateFade(); }
     if (!needs || !host) return; needs = false; fadeGrid(); renderer.render(scene, camera); emit("render");
@@ -498,14 +505,14 @@ function rebuildTerrain(changed) {
 function buildChunk(ck) {
   const [ci, cj] = ck.split(",").map(Number), old = chunks.get(ck);
   if (old) { terrainGroup.remove(old.group); old.group.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
-  const M = N + 2, data = digMask.image.data, L = config.digLevel, B0 = BASE(), tri = [], col = [], gtri = [], gcol = [], wtri = [], wcol = [], wfl = [];
+  const M = N + 2, data = digMask.image.data, L = config.digLevel, B0 = BASE(), tri = [], col = [], gtri = [], gcol = [], wtri = [], wcol = [], wfl = [], wbk = [];
   const p = palette(false), C = h => new THREE.Color(h), cLow = C(p.tLow), cHigh = C(p.tHigh), cWall = C(p.tWall), cPit = C(p.tPit),
     gLow = C(p.gLow), gHigh = C(p.gHigh), cWater = C(p.water), cFall = C(p.waterFall), top = config.raiseMax,
     cUnder = cWall.clone().multiplyScalar(.82), cGrassSide = gHigh.clone().lerp(cWall, .45);
   const quad = (T, Cc, c, a, b, cc, d) => { T.push(...a, ...b, ...cc, ...a, ...cc, ...d); for (let q = 0; q < 6; q++) Cc.push(c.r, c.g, c.b); };
   const NB = (i, j, x0, x1, z0, z1) => [[i + 1, j, x1, z0, x1, z1], [i - 1, j, x0, z1, x0, z0], [i, j + 1, x1, z1, x0, z1], [i, j - 1, x0, z0, x1, z0]];
   /* 水的四边形：同时记流向与类型（0 水面 / 1 落差面 / 2 水沫） */
-  const wq = (c, fl, a, b, cc, d) => { quad(wtri, wcol, c, a, b, cc, d); for (let q = 0; q < 6; q++) wfl.push(fl[0], fl[1], fl[2]); };
+  const wq = (c, fl, a, b, cc, d, bk = [0, 0, 0, 0]) => { quad(wtri, wcol, c, a, b, cc, d); for (let q = 0; q < 6; q++) { wfl.push(fl[0], fl[1], fl[2]); wbk.push(...bk); } };
   const cFoam = new THREE.Color(0xffffff);
   const waterTop = (i, j) => { const c = inBoard(i, j) ? cols.get(K(i, j)) : null, t = c && c[c.length - 1]; return t && t.t === "w" ? t.b : null; };
   /* 流向：往比自己低的相邻水面流；一样高时顺着水连着的方向（河从北往南、从西往东） */
@@ -529,7 +536,8 @@ function buildChunk(ck) {
       const up = runs[q + 1], dn = runs[q - 1], y = r.b * L;
       if (!up || up.a > r.b) {                                                             // 顶面
         if (r.t === "w") { const fl = flowOf(i, j, r.b), yw = y - WS;
-          wq(cWater, [fl[0], fl[1], 0], [x0, yw, z0], [x1, yw, z0], [x1, yw, z1], [x0, yw, z1]);
+          const bk = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([a, c]) => waterTop(i + a, j + c) == null ? 1 : 0);   // 邻格不是水 = 岸
+          wq(cWater, [fl[0], fl[1], 0], [x0, yw, z0], [x1, yw, z0], [x1, yw, z1], [x0, yw, z1], bk);
           /* 落差：相邻水面比这里低时，这边缘一条水沫，对面落点一片水花 */
           NB(i, j, x0, x1, z0, z1).forEach(([ni, nj, ax, az, bx, bz]) => {
             const nt = waterTop(ni, nj); if (nt == null || nt >= r.b) return;
@@ -560,7 +568,7 @@ function buildChunk(ck) {
   const group = new THREE.Group(), meshes = [];
   if (tri.length) { const g = mk(tri, col, true), m = new THREE.Mesh(g, pitMat); group.add(m, new THREE.LineSegments(new THREE.EdgesGeometry(g, 30), terrainLine)); meshes.push(m); }
   if (gtri.length) { const m = new THREE.Mesh(mk(gtri, gcol, true), grassMat); group.add(m); meshes.push(m); }
-  if (wtri.length) { const g = mk(wtri, wcol, false); g.setAttribute("flow", new THREE.Float32BufferAttribute(wfl, 3));
+  if (wtri.length) { const g = mk(wtri, wcol, false); g.setAttribute("flow", new THREE.Float32BufferAttribute(wfl, 3)); g.setAttribute("bank", new THREE.Float32BufferAttribute(wbk, 4));
     const m = new THREE.Mesh(g, waterMat); group.add(m); meshes.push(m); }
   terrainGroup.add(group); chunks.set(ck, { group, meshes });
 }
