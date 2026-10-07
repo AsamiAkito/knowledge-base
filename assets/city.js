@@ -35,7 +35,6 @@ const config = {
   recenterNear: 30,                               // 相机距离小于它时视野可移到棋盘任意位置，大于它逐步回中
   homeView: { tx: -1, tz: -1, theta: 45, phi: 37, dist: 43 },   // 打开网站时右下角的视角：拉近看中心城区
   builtinWindows: false,                          // 楼层 / 方块是否自带窗（默认不带，窗户用贴图加）
-  waterFlow: true,                                // 岸边水沫短线缓慢顺流（false = 水面完全静止）
   fadeNear: 5, fadeReach: 2.5,                    // 相机距离小于 fadeNear 才虚化；只虚化离镜头 fadeReach 格以内挡视线的楼
   thickness: 3,                                   // 棋盘厚度（格）
   digLevel: 1 / 6, digMax: 3, raiseMax: 300,       // 地块每层高度 = 小方块边长 = 一层楼高（1/6 格，三者对齐，叠起来没有缝）、最多下挖 / 升高几层
@@ -356,7 +355,7 @@ if (!FLOORS.has(sel.t) || FLOORS.get(sel.t).hidden) sel.t = "grid";
 sel.view = true; sel.tpl = null; sel.decal = null;
 if (sel.wsz === "L") sel.wsz = "T"; if (!["S", "M", "T"].includes(sel.wsz)) sel.wsz = "M"; if (sel.wlit == null) sel.wlit = 1;
 const decalType = () => sel.decal === "window" ? "win:" + sel.wsz + ":" + (sel.wlit ? 1 : 0) + ":" + (sel.wrot ? 1 : 0) : sel.decal;                // 打开时默认观赏模式（鼠标按钮）
-const paneLight = { value: 0 }, waterTime = { value: 0 }, waterFlowOn = { value: 1 }; let paneVis = null;
+const paneLight = { value: 0 }; let paneVis = null;
 let night = false, hover = null, expanded = false, tAnchor = null, drag = null;
 
 /* ---------------- three.js 场景 ---------------- */
@@ -403,34 +402,30 @@ function initThree() {
   /* 风格化水面（参考 Godot / Unity 风格化水：浅到深的色带 + 岸边水沫）：
      flow.xy = 水流方向，flow.z = 0 水面 / 1 落差面 / 2 落差水沫；bank = 这格四边（+x −x +z −z）哪几边是岸 */
   waterMat.onBeforeCompile = sh => {
-    sh.uniforms.uTime = waterTime; sh.uniforms.uFlow = waterFlowOn;
     sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nattribute vec3 flow;\nattribute vec4 bank;\nattribute vec4 corn;\nvarying vec3 vFlow;\nvarying vec4 vBank;\nvarying vec4 vCorn;\nvarying vec3 vWPos;")
       .replace("#include <begin_vertex>", "#include <begin_vertex>\nvFlow = flow;\nvBank = bank;\nvCorn = corn;\nvWPos = position;");
-    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nuniform float uTime;\nuniform float uFlow;\nvarying vec3 vFlow;\nvarying vec4 vBank;\nvarying vec4 vCorn;\nvarying vec3 vWPos;")
+    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec3 vFlow;\nvarying vec4 vBank;\nvarying vec4 vCorn;\nvarying vec3 vWPos;")
       .replace("#include <color_fragment>", [
         "#include <color_fragment>",
         "if (vFlow.z < 0.5) {",
         "  vec2 c = fract(vWPos.xz + 95.0);",                               // 格内坐标 0..1
-        "  float d = 1.0, al = 0.0;",                                       // d：到最近岸边的距离；al：沿着那条岸的坐标
-        "  if (vBank.x > 0.5 && 1.0 - c.x < d) { d = 1.0 - c.x; al = vWPos.z; }",
-        "  if (vBank.y > 0.5 && c.x < d) { d = c.x; al = vWPos.z; }",
-        "  if (vBank.z > 0.5 && 1.0 - c.y < d) { d = 1.0 - c.y; al = vWPos.x; }",
-        "  if (vBank.w > 0.5 && c.y < d) { d = c.y; al = vWPos.x; }",
+        "  float d = 1.0;",                                                 // d：到最近岸边的距离
+        "  if (vBank.x > 0.5 && 1.0 - c.x < d) d = 1.0 - c.x;",
+        "  if (vBank.y > 0.5 && c.x < d) d = c.x;",
+        "  if (vBank.z > 0.5 && 1.0 - c.y < d) d = 1.0 - c.y;",
+        "  if (vBank.w > 0.5 && c.y < d) d = c.y;",
         /* 四个角：corn = 1 内凹（斜对角是岸，两侧是水）→ 到角点的距离；2 外凸（两侧都是岸）→ 圆弧 */
         "  vec2 P[4]; P[0] = vec2(1.0, 1.0); P[1] = vec2(1.0, 0.0); P[2] = vec2(0.0, 1.0); P[3] = vec2(0.0, 0.0);",
         "  float K[4]; K[0] = vCorn.x; K[1] = vCorn.y; K[2] = vCorn.z; K[3] = vCorn.w;",
         "  const float RR = 0.42;",
         "  for (int q = 0; q < 4; q++) {",
         "    vec2 p = P[q], s = sign(p - 0.5);",
-        "    if (K[q] > 0.5 && K[q] < 1.5) { float e = length(c - p); if (e < d) { d = e; al = vWPos.x + vWPos.z; } }",
+        "    if (K[q] > 0.5 && K[q] < 1.5) { float e = length(c - p); d = min(d, e); }",
         "    else if (K[q] > 1.5) { vec2 o = p - s * RR, t = (c - o) * s; if (t.x > 0.0 && t.y > 0.0) d = max(0.0, RR - length(c - o)); }",
         "  }",
         "  diffuseColor.rgb *= mix(1.1, 0.84, smoothstep(0.0, 0.42, d));",  // 靠岸浅、河心深
-        "  float foam = 1.0 - smoothstep(0.035, 0.06, d);",                 // 贴岸一条细水沫
-        "  vec2 fl = length(vFlow.xy) > 0.01 ? normalize(vFlow.xy) : vec2(0.0, 1.0);",
-        "  float sgn = abs(fl.x) > abs(fl.y) ? sign(fl.x) : sign(fl.y);",    // 短线顺水流方向移动
-        "  float dash = step(0.62, fract(al * 2.5 - sgn * uTime * 0.18 * uFlow)) * (1.0 - smoothstep(0.1, 0.13, d)) * smoothstep(0.08, 0.1, d);",
-        "  diffuseColor.rgb = mix(diffuseColor.rgb, diffuse, max(foam * 0.85, dash * 0.55));",
+        "  float foam = 1.0 - smoothstep(0.035, 0.06, d);",                 // 贴岸一条细水沫（拐角处走圆弧）
+        "  diffuseColor.rgb = mix(diffuseColor.rgb, diffuse, foam * 0.85);",
         "}"].join("\n"));
   };
   terrainLine = new THREE.LineBasicMaterial({ color: 0x8d8fa0, transparent: true });
@@ -479,7 +474,6 @@ function initThree() {
     if (now - (loop.ck || 0) > 500) { loop.ck = now; updateClock(); }
     /* 编辑模式车辆停住，只在操作时重绘 */
     if (host && !document.hidden && (expanded ? sel.view : cityVisible) && now - carLast >= (expanded ? 0 : 50)) { stepCars(Math.min(.1, (now - carLast) / 1000)); carLast = now; }
-    if (host && !document.hidden && (expanded ? sel.view : cityVisible) && now - (loop.wt || 0) > 200) { loop.wt = now; waterFlowOn.value = config.waterFlow ? 1 : 0; if (config.waterFlow) { waterTime.value = now / 1000; req(); } }   // 水流约 5 帧/秒
     if (dirtyCells.size) { dirtyCells.forEach(bakeCell); dirtyCells.clear(); }
     if (fadeDirty) { fadeDirty = false; updateFade(); }
     if (!needs || !host) return; needs = false; fadeGrid(); renderer.render(scene, camera); emit("render");
@@ -521,10 +515,6 @@ function buildChunk(ck) {
   /* 水的四边形：同时记流向与类型（0 水面 / 1 落差面 / 2 水沫） */
   const wq = (c, fl, a, b, cc, d, bk = [0, 0, 0, 0], cn = [0, 0, 0, 0]) => { quad(wtri, wcol, c, a, b, cc, d); for (let q = 0; q < 6; q++) { wfl.push(fl[0], fl[1], fl[2]); wbk.push(...bk); wcn.push(...cn); } };
   const waterTop = (i, j) => { const c = inBoard(i, j) ? cols.get(K(i, j)) : null, t = c && c[c.length - 1]; return t && t.t === "w" ? t.b : null; };
-  /* 流向：往比自己低的相邻水面流；一样高时顺着水连着的方向（河从北往南、从西往东） */
-  const flowOf = (i, j, b) => { let best = null, bh = b, ax = 0, az = 0;
-    [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([a, c]) => { const t = waterTop(i + a, j + c); if (t == null) return; if (t < bh) { bh = t; best = [a, c]; } ax += Math.abs(a); az += Math.abs(c); });
-    return best || (az >= ax ? [0, 1] : [1, 0]); };
   const WS = .07;                                                       // 水面比方块顶低一点
   /* 挡住邻格侧面的范围：顶上露天的水块只挡到水面（否则水面和方块顶之间会漏出一条透明缝） */
   const occ = runs => runs.map((r, q) => r.t === "w" && !(runs[q + 1] && runs[q + 1].a === r.b) ? { a: r.a, b: r.b - WS / L, t: r.t } : r);
@@ -541,7 +531,7 @@ function buildChunk(ck) {
     runs.forEach((r, q) => {
       const up = runs[q + 1], dn = runs[q - 1], y = r.b * L;
       if (!up || up.a > r.b) {                                                             // 顶面
-        if (r.t === "w") { const fl = flowOf(i, j, r.b), yw = y - WS;
+        if (r.t === "w") { const fl = [0, 0], yw = y - WS;
           const bk = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([a, c]) => waterTop(i + a, j + c) == null ? 1 : 0);   // 邻格不是水 = 岸
           /* 四个角 (+x+z, +x−z, −x+z, −x−z)：两侧都是岸 = 外凸（2），两侧是水但斜对角是岸 = 内凹（1） */
           const cn = [[1, 1, 0, 2], [1, -1, 0, 3], [-1, 1, 1, 2], [-1, -1, 1, 3]].map(([a, c, sx, sz]) => bk[sx] && bk[sz] ? 2 : !bk[sx] && !bk[sz] && waterTop(i + a, j + c) == null ? 1 : 0);
