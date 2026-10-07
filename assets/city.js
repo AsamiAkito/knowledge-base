@@ -87,32 +87,32 @@ const F = {   // 常用立面图案
   diag: (n) => (w, h) => { const o = [], c = w / n; for (let i = 0; i < n; i++) { const u = -w / 2 + i * c; o.push([u, 0, u + c, h], [u + c, 0, u, h]); } return o; },
   /* 标准窗框（与窗户贴图完全一致） */
   windows: (size = "M", rot = false) => (w, h) => { const [ww, wh] = winDims(size, rot, h), o = [], y1 = h * .2, y2 = y1 + wh;
-    winCenters(w, ww, winStep(size)).forEach(u => { const a = u - ww / 2, c = u + ww / 2; o.push([a, y1, c, y1], [c, y1, c, y2], [c, y2, a, y2], [a, y2, a, y1]); }); return o; },
+    winCenters(w, ww, winStep(size, rot)).forEach(u => { const a = u - ww / 2, c = u + ww / 2; o.push([a, y1, c, y1], [c, y1, c, y2], [c, y2, a, y2], [a, y2, a, y1]); }); return o; },
   /* 窗与窗之间的竖线（幕墙分格） */
-  mullions: (size = "M", rot = false) => (w, h) => { const ww = winDims(size, rot, h)[0], st = winStep(size), c = winCenters(w, ww, st), o = [];
+  mullions: (size = "M", rot = false) => (w, h) => { const ww = winDims(size, rot, h)[0], st = winStep(size, rot), c = winCenters(w, ww, st), o = [];
     c.slice(1).forEach((u, k) => { const m = (c[k] + u) / 2; o.push([m, 0, m, h]); }); return o; },
   /* 紧贴每扇窗两侧的竖线（肋条 / 竖条窗） */
   flank: (size = "M", rot = false, gap = .008) => (w, h) => { const ww = winDims(size, rot, h)[0], o = [];
-    winCenters(w, ww, winStep(size)).forEach(u => { o.push([u - ww / 2 - gap, 0, u - ww / 2 - gap, h], [u + ww / 2 + gap, 0, u + ww / 2 + gap, h]); }); return o; },
+    winCenters(w, ww, winStep(size, rot)).forEach(u => { o.push([u - ww / 2 - gap, 0, u - ww / 2 - gap, h], [u + ww / 2 + gap, 0, u + ww / 2 + gap, h]); }); return o; },
   /* 窗台线与窗顶线（带形窗） */
   band: (size = "M", rot = false) => (w, h) => { const wh = winDims(size, rot, h)[1]; return [[-w / 2, h * .2, w / 2, h * .2], [-w / 2, h * .2 + wh, w / 2, h * .2 + wh]]; },
   all: (...fns) => (w, h) => fns.flatMap(f => f(w, h))
 };
 /* 标准窗：只有小 / 中 / 大三种（可竖放），窗台在层高 20% 处；窗中心按 WP 等距排列、整体居中。
    所有楼层的窗（含夜里的亮灯窗格）和窗户贴图都用这一套，所以任何楼层都能用「实墙层 + 窗户贴图」复刻 */
-const WIN = { S: [.048, .064], M: [.072, .096], L: [.144, .096] }, WP = .12;
+const WIN = { S: [.048, .064], M: [.072, .096], T: [.096, .144] }, WP = .12;
 function winDims(s, rot, h) { const [a, b] = WIN[s] || WIN.M; return rot ? [b, Math.min(a, h * .72)] : [a, Math.min(b, h * .72)]; }
 function winCenters(w, ww, step = WP) {                     // 一面墙上窗中心的位置（沿墙方向，墙中心为 0）
   const n = Math.max(1, Math.floor((w * .86 - ww) / step + 1e-6) + 1), o = [];
   for (let k = 0; k < n; k++) o.push((k - (n - 1) / 2) * step);
   return o;
 }
-const winStep = s => s === "L" ? WP * 2 : WP;
+const winStep = (s, rot) => s === "T" && rot ? WP * 2 : WP;              // 横放的大窗按两倍窗距排
 /* 方盒四面的标准窗格（夜里亮灯）：win = { s, rot, step, lit } */
 function boxPanes(w, h, { s: size = "M", rot = false, step, seed = 1, lit = .72, y0 = 0 } = {}) {
   const r = rng(seed), pos = [], col = [], [ww, wh] = winDims(size, rot, h), half = w / 2 + .005, yb = y0 + h * .2;
   FACES.forEach(([nx, nz]) => { const tx = -nz, tz = nx;
-    winCenters(w, ww, step || winStep(size)).forEach(u => {
+    winCenters(w, ww, step || winStep(size, rot)).forEach(u => {
       const P = (a, b) => [nx * half + tx * (u + a * ww / 2), yb + b * wh, nz * half + tz * (u + a * ww / 2)];
       const c3 = r() < lit ? [1, .82, .42] : [.05, .06, .085];
       [P(-1, 0), P(1, 0), P(1, 1), P(-1, 0), P(1, 1), P(-1, 1)].forEach(v => { pos.push(...v); col.push(...c3); }); }); });
@@ -121,7 +121,7 @@ function boxPanes(w, h, { s: size = "M", rot = false, step, seed = 1, lit = .72,
   return g;
 }
 function roundPanes(rad, h, { s: size = "M", rot = false, seed = 1, lit = .72 } = {}) {                 // 圆柱面上的标准窗
-  const r = rng(seed), pos = [], col = [], R2 = rad + .005, [ww, wh] = winDims(size, rot, h), count = Math.max(3, Math.floor(Math.PI * 2 * rad * .86 / winStep(size))), yb = h * .2;
+  const r = rng(seed), pos = [], col = [], R2 = rad + .005, [ww, wh] = winDims(size, rot, h), count = Math.max(3, Math.floor(Math.PI * 2 * rad * .86 / winStep(size, rot))), yb = h * .2;
   for (let i = 0; i < count; i++) { const a = i / count * Math.PI * 2, nx = Math.cos(a), nz = Math.sin(a), tx = -nz, tz = nx;
     const P = (p, q) => [nx * R2 + tx * p * ww / 2, yb + q * wh, nz * R2 + tz * p * ww / 2], c3 = r() < lit ? [1, .82, .42] : [.05, .06, .085];
     [P(-1, 0), P(1, 0), P(1, 1), P(-1, 0), P(1, 1), P(-1, 1)].forEach(v => { pos.push(...v); col.push(...c3); }); }
@@ -177,11 +177,12 @@ function floorGeo(t, s, v) {
 /* ---------------- 内置楼层（线稿砖块） ---------------- */
 const I = p => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round">' + p + "</svg>";
 const body = (id, name, icon, lineFn, paneOpt, extra = {}) => registerFloor(Object.assign({ id, name, icon,
+  win: paneOpt ? paneOpt() : null,
   build: ({ w, h, seed }) => ({ solid: box(w, h), lines: lineFn ? facade(w, h, lineFn) : null, panes: paneOpt ? boxPanes(w, h, Object.assign({ seed }, paneOpt(w))) : null }) }, extra));
 body("grid", "网格幕墙", I('<rect x="5" y="4" width="14" height="16"/><path d="M8.5 4v16M12 4v16M15.5 4v16M5 9.3h14M5 14.6h14"/>'),
   F.all(F.mullions("M"), F.band("M")), () => ({ s: "M" }));
 body("vfin", "竖向肋条", I('<rect x="5" y="4" width="14" height="16"/><path d="M7.3 4v16M9.6 4v16M11.9 4v16M14.2 4v16M16.5 4v16"/>'),
-  F.all(F.flank("L", true), F.mullions("L", true)), () => ({ s: "L", rot: true, step: WP }), { seamless: true });
+  F.all(F.flank("T"), F.mullions("T")), () => ({ s: "T" }), { seamless: true });
 body("louver", "横向百叶", I('<rect x="5" y="5" width="14" height="14"/><path d="M5 7.5h14M5 10h14M5 12.5h14M5 15h14M5 17.5h14"/>'),
   F.hlines(3), () => ({ s: "S" }));
 body("ribbon", "带形窗", I('<rect x="5" y="5" width="14" height="14"/><path d="M5 9h14M5 13h14"/><path d="M8 9v4M11 9v4M14 9v4M17 9v4"/>'),
@@ -191,31 +192,31 @@ body("window", "窗户层", I('<rect x="5" y="6" width="14" height="12"/><path d
 body("diagrid", "斜交网格", I('<rect x="5" y="4" width="14" height="16"/><path d="M5 4l7 16M12 4 5 20M12 4l7 16M19 4l-7 16"/>'),
   F.diag(3), () => ({ s: "S", step: WP * 2 }));
 body("curtain", "玻璃幕墙", I('<rect x="6" y="5" width="12" height="15"/><path d="M9 5v15M12 5v15M15 5v15M6 12h12"/>'),
-  F.mullions("L", true), () => ({ s: "L", rot: true, step: WP }), { seamless: true });
+  F.mullions("T"), () => ({ s: "T" }), { seamless: true });
 body("plain", "实墙层", I('<rect x="5" y="8" width="14" height="10"/>'), null, null);
 body("square", "正方形方格", I('<rect x="4" y="8" width="16" height="5.3"/><path d="M9.3 8v5.3M14.6 8v5.3"/><rect x="4" y="13.3" width="16" height="5.3"/><path d="M9.3 13.3v5.3M14.6 13.3v5.3"/>'),
-  F.mullions("L"), () => ({ s: "L" }));
-registerFloor({ id: "cube", name: "小方块", width: 1 / 6, height: 1 / 6, icon: I('<path d="M12 6l6 3.5v7L12 20l-6-3.5v-7z"/><path d="M6 9.5l6 3.5 6-3.5M12 13v7"/>'),
+  F.mullions("T", true), () => ({ s: "T", rot: true }));
+registerFloor({ id: "cube", name: "小方块", width: 1 / 6, height: 1 / 6, win: { s: "S" }, icon: I('<path d="M12 6l6 3.5v7L12 20l-6-3.5v-7z"/><path d="M6 9.5l6 3.5 6-3.5M12 13v7"/>'),
   build: ({ w, h, seed }) => ({ solid: box(w, h), panes: boxPanes(w, h, { seed, s: "S" }) }) });
-registerFloor({ id: "cubeS", name: "小方块（无缝）", width: 1 / 6, height: 1 / 6, seamless: true, icon: I('<path d="M12 3l5 2.8v12.4L12 21l-5-2.8V5.8z"/><path d="M7 5.8l5 2.8 5-2.8M12 8.6V21"/>'),
+registerFloor({ id: "cubeS", name: "小方块（无缝）", width: 1 / 6, height: 1 / 6, seamless: true, win: { s: "S", rot: true }, icon: I('<path d="M12 3l5 2.8v12.4L12 21l-5-2.8V5.8z"/><path d="M7 5.8l5 2.8 5-2.8M12 8.6V21"/>'),
   build: ({ w, h, seed }) => ({ solid: box(w, h), panes: boxPanes(w, h, { seed, s: "S", rot: true }) }) });
 body("shaft", "光面塔身", I('<path d="M7 3v18M17 3v18"/>'), null, () => ({ s: "S", rot: true, step: WP * 2, lit: .5 }), { seamless: true });
 body("slot", "竖条窗", I('<path d="M6 3v18M18 3v18M9 3v18M10 3v18M14 3v18M15 3v18"/>'),
   F.flank("S", true, .004), () => ({ s: "S", rot: true }), { seamless: true });
-registerFloor({ id: "column", name: "圆柱塔身", seamless: true, icon: I('<path d="M7 3v18M17 3v18M10 3v18M14 3v18"/>'),
+registerFloor({ id: "column", name: "圆柱塔身", seamless: true, win: { s: "T", round: true }, icon: I('<path d="M7 3v18M17 3v18M10 3v18M14 3v18"/>'),
   build: ({ w, h, seed }) => {
     const r = w / 2, g = new THREE.CylinderGeometry(r, r, h, 32); g.translate(0, h / 2, 0); const p = [];
     for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; p.push([Math.cos(a) * (r + .002), 0, Math.sin(a) * (r + .002)], [Math.cos(a) * (r + .002), h, Math.sin(a) * (r + .002)]); }
     return { solid: g, lines: lines(p), autoEdges: false, ringTop: lines(ring(r + .002, h)), ringBottom: lines(ring(r + .002, 0)),
-      panes: roundPanes(r, h, { seed, s: "L", rot: true }) };
+      panes: roundPanes(r, h, { seed, s: "T" }) };
   } });
-registerFloor({ id: "podium", name: "裙楼大板", height: .32, icon: I('<rect x="3" y="7" width="18" height="12"/><path d="M3 13h18M9 7v12M15 7v12"/><circle cx="12" cy="10" r="1.6"/>'),
+registerFloor({ id: "podium", name: "裙楼大板", height: .32, win: { s: "T", rot: true }, icon: I('<rect x="3" y="7" width="18" height="12"/><path d="M3 13h18M9 7v12M15 7v12"/><circle cx="12" cy="10" r="1.6"/>'),
   build: ({ w, h, seed }) => {
-    return { solid: box(w, h), lines: facade(w, h, F.mullions("L")), panes: boxPanes(w, h, { seed, s: "L" }) };
+    return { solid: box(w, h), lines: facade(w, h, F.mullions("T", true)), panes: boxPanes(w, h, { seed, s: "T", rot: true }) };
   } });
-registerFloor({ id: "setback", name: "收分层", icon: I('<rect x="8" y="8" width="8" height="10"/><path d="M5 18h14M10 8v10M12 8v10M14 8v10"/>'),
+registerFloor({ id: "setback", name: "收分层", win: { s: "M", scale: .72 }, icon: I('<rect x="8" y="8" width="8" height="10"/><path d="M5 18h14M10 8v10M12 8v10M14 8v10"/>'),
   build: ({ w, h, seed }) => { const s = w * .72; return { solid: box(s, h), lines: facade(s, h, F.mullions("M")), panes: boxPanes(s, h, { seed, s: "M" }) }; } });
-registerFloor({ id: "round", name: "圆形层", icon: I('<ellipse cx="12" cy="7" rx="6" ry="2"/><path d="M6 7v10a6 2 0 0 0 12 0V7"/><path d="M6 11.5a6 2 0 0 0 12 0"/>'),
+registerFloor({ id: "round", name: "圆形层", win: { s: "M", round: true }, icon: I('<ellipse cx="12" cy="7" rx="6" ry="2"/><path d="M6 7v10a6 2 0 0 0 12 0V7"/><path d="M6 11.5a6 2 0 0 0 12 0"/>'),
   build: ({ w, h, seed }) => {
     const r = w / 2, g = new THREE.CylinderGeometry(r, r, h, 32); g.translate(0, h / 2, 0);
     const p = [...ring(r + .002, 0), ...ring(r + .002, h)];
@@ -345,13 +346,13 @@ const hist = [], redoStack = [];
 let sel = Object.assign({ t: "grid", s: "M", r: 0 }, (() => { try { return JSON.parse(localStorage.getItem(KEY_SEL)) || {}; } catch (e) { return {}; } })());
 if (!FLOORS.has(sel.t) || FLOORS.get(sel.t).hidden) sel.t = "grid";
 sel.view = true; sel.tpl = null; sel.decal = null;
-if (!["S", "M", "L"].includes(sel.wsz)) sel.wsz = "M"; if (sel.wlit == null) sel.wlit = 1;
+if (sel.wsz === "L") sel.wsz = "T"; if (!["S", "M", "T"].includes(sel.wsz)) sel.wsz = "M"; if (sel.wlit == null) sel.wlit = 1;
 const decalType = () => sel.decal === "window" ? "win:" + sel.wsz + ":" + (sel.wlit ? 1 : 0) + ":" + (sel.wrot ? 1 : 0) : sel.decal;                // 打开时默认观赏模式（鼠标按钮）
 const paneLight = { value: 0 }; let paneVis = null;
 let night = false, hover = null, expanded = false, tAnchor = null, drag = null;
 
 /* ---------------- three.js 场景 ---------------- */
-let facadeMat, renderer, scene, camera, hemi, sun, faceMat, lineMat, paneMat, ghostFace, ghostLine, hiLine;
+let winLineMat, facadeMat, renderer, scene, camera, hemi, sun, faceMat, lineMat, paneMat, ghostFace, ghostLine, hiLine;
 let terrainLine, grassMesh, waterMesh, waterLines, roadMat, roadMesh, roadLines, roadEdge, bakeGroup, ground, groundTop, digMask, pitMesh, pitEdges, pitMat, gridMinor, gridMajor, floorsGroup, bridgeGroup, hoverBox, ghost, pivot, linkLine, hitMeshes = [], hiObj = null;
 const cam = Object.assign({}, config.homeView), goal = { theta: cam.theta, phi: cam.phi };   // 打开网站时的视角
 
@@ -366,6 +367,7 @@ function initThree() {
   faceMat = new THREE.MeshLambertMaterial({ color: 0xffffff, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
   lineMat = new THREE.LineBasicMaterial({ color: 0x2c2e36 });
   facadeMat = new THREE.LineBasicMaterial({ color: 0x2c2e36, transparent: true });
+  winLineMat = new THREE.LineBasicMaterial({ color: 0x2c2e36, transparent: true });       // 楼层自带窗的窗框
   paneMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
   paneMat.onBeforeCompile = sh => {
     sh.uniforms.uLight = paneLight;
@@ -508,7 +510,7 @@ function rebuildTerrain() {
 function accent() { return getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#0e8fbc"; }
 function applyPalette() {
   const p = blendPalette(dark), W = new THREE.Color(0xffffff);
-  faceMat.color.setHex(p.face); lineMat.color.setHex(p.line); facadeMat.color.setHex(p.line);
+  faceMat.color.setHex(p.face); lineMat.color.setHex(p.line); facadeMat.color.setHex(p.line); winLineMat.color.setHex(p.line);
   groundTop.material.color.setHex(p.ground); roadMat.color.setHex(p.road); terrainLine.color.setHex(p.tLine);
   /* 地形顶点色按白天算一次，入夜时整体乘一层暗色，不必重算 */
   grassMesh.material.color.copy(W).lerp(new THREE.Color(0x2a3048), dark); waterMesh.material.color.copy(grassMesh.material.color);
@@ -532,7 +534,10 @@ function fadeGrid() {
   gridMinor.material.opacity = Math.max(0, Math.min(1, (ppc - 5) / 10));
   gridMinor.visible = gridMinor.material.opacity > .02;
   facadeMat.opacity = Math.max(0, Math.min(1, (ppc - 4) / 10));          // 拉远时立面细节淡出，只留楼体轮廓
+  facadeMat.opacity *= 1 - dark * .6;                                      // 入夜立面线调暗，楼体不发白，亮着的窗更显眼
   facadeMat.visible = facadeMat.opacity > .02;
+  winLineMat.opacity = Math.max(0, Math.min(1, (ppc - 9) / 12)) * (1 - dark * .8);   // 窗框比立面线更早淡出，入夜后让位给亮着的窗格
+  winLineMat.visible = winLineMat.opacity > .02;
   terrainLine.opacity = Math.max(0, Math.min(1, (ppc - 2) / 8)); terrainLine.visible = terrainLine.opacity > .02;   // 地形台阶线拉远时淡出，远看靠颜色分辨高低
 }
 
@@ -655,7 +660,7 @@ function litAttr(g) {                                     // 每扇窗（6 个�
 function bakeCell(key) {
   const old = baked.get(key); if (old) { bakeGroup.remove(old); old.traverse(o => { if (o.geometry) o.geometry.dispose(); }); baked.delete(key); }
   const [i, j] = key.split(",").map(Number), st = stackOf(i, j); if (!st.length) return;
-  const B = { solid: [], outline: [], facade: [], panes: [] };
+  const B = { solid: [], outline: [], facade: [], winline: [], panes: [] };
   const take = (o, bucket) => { const g = o.geometry.clone(); g.applyMatrix4(o.matrixWorld); B[bucket].push(g); };
   st.forEach(f => {
     f.obj.visible = true; f.obj.updateMatrixWorld(true);
@@ -665,6 +670,7 @@ function bakeCell(key) {
       else if (o.isMesh && o.userData.pane) take(o, "panes");
       else if (o.isLineSegments && (o.material === lineMat || o.userData.prevMat === lineMat)) take(o, "outline");
       else if (o.isLineSegments && (o.material === facadeMat || o.userData.prevMat === facadeMat)) take(o, "facade");
+      else if (o.isLineSegments && (o.material === winLineMat || o.userData.prevMat === winLineMat)) take(o, "winline");
       o.children.forEach(c => walk(c, root));
     })(f.obj, f.obj);
     f.obj.visible = false;
@@ -673,16 +679,17 @@ function bakeCell(key) {
   add(B.solid, g => new THREE.Mesh(g, faceMat));
   add(B.outline, g => new THREE.LineSegments(g, lineMat));
   add(B.facade, g => new THREE.LineSegments(g, facadeMat));
+  add(B.winline, g => new THREE.LineSegments(g, winLineMat));
   add(B.panes, g => { litAttr(g); const m = new THREE.Mesh(g, paneMat); m.userData.pane = true; m.visible = night; return m; });
   grp.userData.box = new THREE.Box3().setFromObject(grp); grp.userData.key = key;
   bakeGroup.add(grp); baked.set(key, grp); fadeDirty = true;
 }
 /* 贴图几何：在楼层本地坐标的第 d 个面上、沿面位置 u 处，返回 { lines, pane } */
-const OLD_WIN = { W: "L:0", T: "L:1" };                                     // 旧尺寸 → 新尺寸:旋转
+const OLD3 = { W: "T:1", T: "T:0" };                                        // 三段式旧格式：宽窗 / 高窗 → 新尺寸:旋转
 const isWin = t => t === "window" || /^win:/.test(t || "");
 function winOf(t) {
   let m = /^win:(\w):(\d)(?::(\d))?$/.exec(t || ""); if (!m) return { s: "M", lit: true, rot: false };
-  let [s, rot] = OLD_WIN[m[1]] ? OLD_WIN[m[1]].split(":") : [m[1], m[3] || "0"];
+  let [s, rot] = m[3] === undefined && OLD3[m[1]] ? OLD3[m[1]].split(":") : m[1] === "L" ? ["T", m[3] === "1" ? "0" : "1"] : [m[1], m[3] || "0"];
   return { s: WIN[s] ? s : "M", lit: m[2] === "1", rot: rot === "1" };
 }
 function winSize(t, h) { const w = winOf(t); return winDims(w.s, w.rot, h); }
@@ -734,12 +741,47 @@ function removeDecal(i, j, k, d, u, type) {
   const r = detachDecal(i, j, k, d, type, u); if (!r) return false;
   record({ op: "decal-", i, j, k, dc: r }); changed(); emit("undecal", { i, j, k, d, type }); return true;
 }
+/* 楼层自带的一套标准窗（窗框 + 夜里的窗格），与窗户贴图同尺寸同网格 */
+const winCache = new Map();
+function winGeo(f) {
+  const key = f.t + "|" + f.s + "|" + f.v; if (winCache.has(key)) return winCache.get(key);
+  const def = FLOORS.get(f.t), sp = def && def.win; if (!sp) return null;
+  const g = floorGeo(f.t, f.s, f.v), seed = (f.v || 0) * 7919 + 13, ws = g.w * (sp.scale || 1), out = {};
+  if (sp.round) out.panes = roundPanes(g.w / 2, g.h, { seed, s: sp.s, rot: sp.rot });
+  else { out.lines = facade(ws, g.h, F.windows(sp.s, sp.rot)); out.panes = boxPanes(ws, g.h, { seed, s: sp.s, rot: sp.rot, step: sp.step, lit: sp.lit }); }
+  winCache.set(key, out); return out;
+}
+function attachWin(f) {
+  const g = winGeo(f); if (!g) return false;
+  const grp = new THREE.Group(); if (g.lines) grp.add(new THREE.LineSegments(g.lines, winLineMat));
+  const pm = new THREE.Mesh(g.panes, paneMat); pm.userData.pane = true; pm.visible = night; grp.add(pm);
+  f.obj.add(grp); f.winObj = grp; f.win = 1; return true;
+}
+function detachWin(f) { if (f.winObj) { f.obj.remove(f.winObj); f.winObj = null; } f.win = 0; }
+/* 把某层的整套窗展开成一扇扇窗户贴图（改单扇窗之前调用；圆柱面上的窗没法贴图，直接去掉） */
+function winDecals(f) {
+  const def = FLOORS.get(f.t), sp = def && def.win; if (!sp || sp.round) return [];
+  const g = floorGeo(f.t, f.s, f.v), r = rng((f.v || 0) * 7919 + 13), ws = g.w * (sp.scale || 1), [ww] = winDims(sp.s, sp.rot, g.h), out = [];
+  FACES.forEach((_, d) => winCenters(ws, ww, sp.step || winStep(sp.s, sp.rot)).forEach(u => {
+    out.push({ d, u, type: "win:" + sp.s + ":" + (r() < (sp.lit ?? .72) ? 1 : 0) + ":" + (sp.rot ? 1 : 0) }); }));
+  return out;
+}
+function expandWin(i, j, k) {
+  const f = stackOf(i, j)[k]; if (!f || !f.win) return;
+  const decs = winDecals(f); detachWin(f); decs.forEach(dc => attachDecal(i, j, k, dc)); markDirty(i, j);
+  record({ op: "winx", i, j, k, decs });
+}
+function windowAll() {                                   // 给现有的楼都装上窗（已经贴过窗户的层不动）
+  cells.forEach((st, key) => { const [i, j] = key.split(",").map(Number);
+    st.forEach(f => { if (!f.win && !f.decals.some(x => isWin(x.type)) && attachWin(f)) markDirty(i, j); }); });
+}
 function addFloor(i, j, f) {
   const st = stackOf(i, j), k = st.length, y = stackTop(i, j), g = floorGeo(f.t, f.s, f.v);
   const obj = meshSet(g, { kind: "floor", i, j, k });
   obj.position.set(i - HALF + .5, y, j - HALF + .5); orient(obj, g.w, f.r, f.z || 1);
-  const rec = { t: f.t, s: f.s, v: f.v, r: f.r || 0, z: f.z || 1, h: g.h, obj, wings: [], decals: [] };
+  const rec = { t: f.t, s: f.s, v: f.v, r: f.r || 0, z: f.z || 1, h: g.h, obj, wings: [], decals: [], win: 0 };
   floorsGroup.add(obj); obj.updateMatrixWorld(true); st.push(rec); cells.set(K(i, j), st);
+  if (f.win) attachWin(rec);
   (f.wings || []).forEach(w => attachWing(i, j, k, w));
   (f.decals || []).forEach(dc => attachDecal(i, j, k, dc));
   refreshSeams(i, j);
@@ -752,7 +794,7 @@ function popFloor(i, j) {
   gone.forEach(dropBridge);
   floorsGroup.remove(f.obj); dispose(f.obj);
   if (!st.length) { cells.delete(K(i, j)); markDirty(i, j); } else refreshSeams(i, j);
-  return { t: f.t, s: f.s, v: f.v, r: f.r, z: f.z, wings: f.wings.map(w => ({ d: w.d, t: w.t, s: w.s, v: w.v, u: w.u })), decals: f.decals.map(x => ({ d: x.d, u: x.u, type: x.type })), bridges: gone.map(b => ({ a: b.a, b: b.b, t: b.t, v: b.v })) };
+  return { t: f.t, s: f.s, v: f.v, r: f.r, z: f.z, win: f.win, wings: f.wings.map(w => ({ d: w.d, t: w.t, s: w.s, v: w.v, u: w.u })), decals: f.decals.map(x => ({ d: x.d, u: x.u, type: x.type })), bridges: gone.map(b => ({ a: b.a, b: b.b, t: b.t, v: b.v })) };
 }
 /* 侧翼：挂在某层的某个面（d=0..3，楼层本地坐标的 +x +z -x -z），随楼层旋转缩放 */
 function wingU(parent, t, s, u) {                     // 固定尺寸侧翼沿面方向的位置（吸附、不出面）；其它侧翼居中
@@ -1280,6 +1322,7 @@ function apply(a, inverse) {
     if (a.op === "add" ? !inverse : inverse) { addFloor(a.i, a.j, a.f); (a.f.bridges || []).forEach(b => addBridge(b.a, b.b, b.t, b.v)); }
     else { const g = popFloor(a.i, a.j); if (g && a.op === "add") a.f = g; }
   } else if (a.op === "wing+" || a.op === "wing-") { wingAdd ? attachWing(a.i, a.j, a.k, a.w) : detachWing(a.i, a.j, a.k, a.w.d, a.w.u || 0); }
+  else if (a.op === "winx") { const f = stackOf(a.i, a.j)[a.k]; if (f) { if (inverse) { a.decs.forEach(dc => detachDecal(a.i, a.j, a.k, dc.d, dc.type, dc.u)); attachWin(f); } else { detachWin(f); a.decs.forEach(dc => attachDecal(a.i, a.j, a.k, dc)); } markDirty(a.i, a.j); } }
   else if (a.op === "vox") { setVox(a.i, a.j, a.lv, (a.add ? !inverse : inverse) ? a.t : null); terrainChanged(); }
   else if (a.op === "road+" || a.op === "road-") { if ((a.op === "road+") !== inverse) roads.add(K(a.i, a.j)); else roads.delete(K(a.i, a.j)); rebuildRoads(); }
   else if (a.op === "decal+" || a.op === "decal-") { if ((a.op === "decal+") !== inverse) attachDecal(a.i, a.j, a.k, a.dc); else detachDecal(a.i, a.j, a.k, a.dc.d, a.dc.type, a.dc.u); }
@@ -1301,7 +1344,7 @@ function changed() { updateGhost(); req(); clearTimeout(saveT); saveT = setTimeo
 function exportJSON() {
   const out = [];
   cells.forEach((st, k) => { const [i, j] = k.split(",").map(Number);
-    out.push([i, j, st.map(f => [f.t, f.s, f.v, f.r || 0, f.wings.map(w => [w.d, w.t, w.s, w.v, w.u || 0]), f.z || 1, f.decals.map(x => [x.d, x.u, x.type])])]); });
+    out.push([i, j, st.map(f => [f.t, f.s, f.v, f.r || 0, f.wings.map(w => [w.d, w.t, w.s, w.v, w.u || 0]), f.z || 1, f.decals.map(x => [x.d, x.u, x.type]), f.win ? 1 : 0])]); });
   const B = baseWorld(WORLD_SEED).cols, cd = [], ser = c => c.map(r => r.a + ":" + r.b + ":" + r.t).join("|");
   new Set([...cols.keys(), ...B.keys()]).forEach(k => { const a = cols.get(k) || DEF(); if (ser(a) !== ser(B.get(k) || DEF())) cd.push([...k.split(",").map(Number), a.flatMap(r => [r.a, r.b, r.t])]); });
   return { v: 7, world: WORLD_SEED, wv, edited, stamp, cells: out, bridges: bridges.map(b => [...b.a, ...b.b, b.t, b.v]), cdiff: cd, seeded, roads: [...roads].map(k => k.split(",").map(Number)), blocks: blocks.map(b => [b.x, b.z, b.y, b.t, b.v]) };
@@ -1324,14 +1367,14 @@ function importJSON(d) {
   seeded = (d && d.seeded) || 0; wv = (d && d.wv) || 0; stamp = (d && d.stamp) || 0;
   edited = d && d.edited != null ? d.edited : (d && d.seeded ? 0 : 1);               // 旧存档：不是默认城区就算改动过
   ((d && d.roads) || []).forEach(([i, j]) => roads.add(K(i, j))); if (roadMesh) rebuildRoads();
-  ((d && d.cells) || []).forEach(([i, j, st]) => st.forEach(([t, s, v, r, ws, z, dcs]) => {
-    if (FLOORS.has(t) && SIZES[s] && canPlace(i, j)) addFloor(i, j, { t, s, v, r: r || 0, z: z || 1, decals: (dcs || []).map(([d2, u2, ty]) => ({ d: d2, u: u2, type: ty })), wings: (ws || []).filter(w => FLOORS.has(w[1])).map(([d2, t2, s2, v2, u2]) => ({ d: d2, t: t2, s: s2, v: v2, u: u2 || 0 })) }); }));
+  ((d && d.cells) || []).forEach(([i, j, st]) => st.forEach(([t, s, v, r, ws, z, dcs, win]) => {
+    if (FLOORS.has(t) && SIZES[s] && canPlace(i, j)) addFloor(i, j, { t, s, v, r: r || 0, z: z || 1, win, decals: (dcs || []).map(([d2, u2, ty]) => ({ d: d2, u: u2, type: ty })), wings: (ws || []).filter(w => FLOORS.has(w[1])).map(([d2, t2, s2, v2, u2]) => ({ d: d2, t: t2, s: s2, v: v2, u: u2 || 0 })) }); }));
   ((d && d.bridges) || []).forEach(b => addBridge(b.slice(0, 3), b.slice(3, 6), b[6] || "shaft", b[7] || 0));
   ((d && d.blocks) || []).forEach(([x, z, y, t, v]) => { if (isFixed(t)) addBlockObj({ x, z, y, t, v }); });
   hist.length = 0; changed();
 }
 /* 生成的世界（同一种子结果固定）缓存起来，存档只记与它的差异 */
-const WORLD_SEED = 20261007, WORLD_VER = 3, worldCache = new Map();
+const WORLD_SEED = 20261007, WORLD_VER = 4, worldCache = new Map();
 let wv = 0, edited = 0, stamp = 0;
 function baseWorld(seed) {
   if (!worldCache.has(seed)) { const w = genWorld(seed), T = new Map(w.terrain.map(([i, j, h]) => [K(i, j), h])), W = new Set(w.water), G = new Set(w.grass);
@@ -1425,7 +1468,7 @@ function updateGhost() {
   if (hover.kind === "bridge") { highlight(hover.ref.obj); return req(); }
   if (hover.kind === "wing") { const f = stackOf(hover.i, hover.j)[hover.k], w = f && f.wings.find(x => x.d === hover.d && Math.abs((x.u || 0) - hover.u) < 1e-6); if (w) highlight(w.obj); return req(); }
   if (sel.decal) {                                                  // 贴图模式
-    if (sel.decal === "grass" || sel.decal === "water") { const t = terrainTarget(hover);
+    if (sel.decal === "grass" || sel.decal === "water" || sel.decal === "earth") { const t = terrainTarget(hover);
       if (t) { const ok = inBoard(t.i, t.j) && !typeAt(t.i, t.j, t.lv) && t.lv < config.raiseMax && !(stackOf(t.i, t.j).length && t.lv >= levelOf(t.i, t.j));
         hoverBox.position.set(t.i - HALF + .5, (t.lv + 1) * config.digLevel + .006, t.j - HALF + .5); hoverBox.material.color.set(ok ? accent() : "#c0344d"); hoverBox.visible = true; } }
     else if (sel.decal === "street") { if (hover.kind === "top" && hover.i != null) { const k = K(hover.i, hover.j), ok = !roads.has(k) && !stackOf(hover.i, hover.j).length;
@@ -1553,8 +1596,10 @@ function doPlace() {
   if (!hover) return;
   if (sel.decal) {
     if (sel.decal === "street") { if (hover.kind === "top" && hover.i != null) addRoad(hover.i, hover.j); }
-    else if (sel.decal === "grass" || sel.decal === "water") { const t = terrainTarget(hover); if (t) addVox(t.i, t.j, t.lv, sel.decal === "grass" ? "g" : "w"); }
-    else if (hover.kind === "side") addDecal(hover.i, hover.j, hover.k, hover.d, hover.u, decalType());
+    else if (sel.decal === "grass" || sel.decal === "water" || sel.decal === "earth") { const t = terrainTarget(hover); if (t) addVox(t.i, t.j, t.lv, { grass: "g", water: "w", earth: "e" }[sel.decal]); }
+    else if (hover.kind === "side") { const f = stackOf(hover.i, hover.j)[hover.k];
+      if (f && f.win) group(() => { expandWin(hover.i, hover.j, hover.k); addDecal(hover.i, hover.j, hover.k, hover.d, hover.u, decalType()); });
+      else addDecal(hover.i, hover.j, hover.k, hover.d, hover.u, decalType()); }
     return;
   }
   if (blockMode() && hover.kind !== "side") { const p = blockAim(); if (p) placeBlock(p.x, p.z, sel.t, hover.kind === "block" && !(hover.n && hover.n[1] > 0) ? p.y : undefined); return; }
@@ -1564,7 +1609,9 @@ function doPlace() {
 function doDelete() {
   if (!hover) return;
   if (sel.decal === "street" && hover.kind === "top" && roads.has(K(hover.i, hover.j))) { removeRoad(hover.i, hover.j); return; }
-  if ((sel.decal === "window" || sel.decal === "door") && hover.kind === "side" && removeDecal(hover.i, hover.j, hover.k, hover.d, hover.u, sel.decal)) return;
+  if ((sel.decal === "window" || sel.decal === "door") && hover.kind === "side") { const f = stackOf(hover.i, hover.j)[hover.k];
+    if (f && f.win && sel.decal === "window") { group(() => { expandWin(hover.i, hover.j, hover.k); removeDecal(hover.i, hover.j, hover.k, hover.d, hover.u, sel.decal); }); return; }
+    if (removeDecal(hover.i, hover.j, hover.k, hover.d, hover.u, sel.decal)) return; }
   if (hover.kind === "top" && hover.i != null && roads.has(K(hover.i, hover.j)) && !stackOf(hover.i, hover.j).length) { removeRoad(hover.i, hover.j); return; }
   if (hover.kind === "bridge") { if (bridges.includes(hover.ref)) disconnect(hover.ref); return; }
   if (hover.kind === "block") { if (blocks.includes(hover.ref)) removeBlock(hover.ref); return; }
@@ -1668,6 +1715,7 @@ const DECALS = [
   ["street", "街道", DI('<path d="M7 3 4 21M17 3l3 18"/><path d="M12 4v3M12 10.5v3M12 17v3"/>')],
   ["window", "窗户贴图", DI('<rect x="7.5" y="4.5" width="9" height="15"/>')],
   ["door", "门贴图", DI('<path d="M7 21V4h10v17M4 21h16"/><path d="M14.5 12.5v1.5"/>')],
+  ["earth", "地块", DI('<path d="M4 8.5 12 4.5l8 4-8 4z"/><path d="M4 8.5v7l8 4 8-4v-7M12 12.5v7"/>')],
   ["water", "水", DI('<path d="M3 9c2-1.6 4-1.6 6 0s4 1.6 6 0 4-1.6 6 0M3 14c2-1.6 4-1.6 6 0s4 1.6 6 0 4-1.6 6 0M3 19c2-1.6 4-1.6 6 0s4 1.6 6 0 4-1.6 6 0"/>')],
   ["grass", "草地", DI('<path d="M3 20h18"/><path d="M6 20c0-3 1-5 2-7M9 20c0-4 .5-6 1.5-9M13 20c0-3 1.5-6 3-8M17 20c0-2 .5-4 2-5"/>')]];
 const extraButtons = [];
@@ -1689,7 +1737,7 @@ function renderBar() {
       + [[1, "开灯", '<rect x="7.5" y="4.5" width="9" height="15" fill="currentColor" fill-opacity=".35"/>'], [0, "关灯", '<rect x="7.5" y="4.5" width="9" height="15"/>']]
         .map(([v, n, p]) => '<button class="cb-btn' + ((sel.wlit ? 1 : 0) === v ? ' on' : '') + '" data-wl="' + v + '" aria-label="' + n + '">' + DI(p) + '</button>').join("")
       + '<span class="cb-sep"></span>'
-      + [["S", "小", 5, 7], ["M", "中", 8, 11], ["L", "大", 16, 11]]
+      + [["S", "小", 5, 7], ["M", "中", 8, 11], ["T", "大", 10, 15]]
         .map(([v, n, a, b]) => { const [w, h] = sel.wrot ? [b, a] : [a, b], x = 12 - w / 2, y = 12 - h / 2; return '<button class="cb-btn' + (sel.wsz === v ? ' on' : '') + '" data-ws="' + v + '" aria-label="' + n + '">' + DI('<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '"/>') + '</button>'; }).join("")
       + '</div>' : '')
     + extraButtons.map((b, k) => '<button class="cb-btn" data-x="' + k + '" title="' + (b.title || "") + '">' + (b.icon || b.title || "") + '</button>').join("")
@@ -1856,7 +1904,7 @@ function seedCity(seed) {
     for (let ox = 1; ox <= 5; ox++) for (let oz = 1; oz <= 5; oz++) { const [i, j] = cellOf(bx, bz, ox, oz);
       if (r() < p && !stackOf(i, j).length && !water.has(K(i, j))) placeTemplate(i, j, "random", Math.floor(r() * 1e9)); }
   }
-  addSpurs(seed);
+  addSpurs(seed); windowAll();
   seeded = SEED_VER; edited = 0; hist.length = 0; redoStack.length = 0; changed();
 }
 let seeded = 0;
@@ -1883,7 +1931,7 @@ async function loadCity() {
   const isEdited = d => !!d && (d.edited != null ? !!d.edited : !d.seeded);
   const stale = local && !isEdited(local) && local.seeded && local.seeded < SEED_VER;   // 没改动过的旧版默认城区：换成新版
   const fresh = () => { clearCity(); setWorld(genWorld(WORLD_SEED)); wv = WORLD_VER; seedCity(WORLD_SEED); };
-  const done = () => { if (wv < 2) migrateWorld(); if (wv < 3) { trimRiverRoads(); wv = 3; } if (!cells.size && !blocks.length) seedCity(WORLD_SEED); updateGhost(); save(); };
+  const done = () => { if (wv < 2) migrateWorld(); if (wv < 3) { trimRiverRoads(); wv = 3; } if (wv < 4) { windowAll(); wv = 4; } if (!cells.size && !blocks.length) seedCity(WORLD_SEED); updateGhost(); save(); };
   if (local && !stale) { importJSON(local); done(); }
   if (!isEdited(local)) {
     const pub = await fetchPublished();
@@ -1906,7 +1954,7 @@ function publishJSON() { stamp = Date.now(); save(); return JSON.stringify(expor
    CityGame.three / scene / camera / renderer / cells / bridges / config / sizes / helpers */
 const api = {
   registerFloor, registerTemplate, placeTemplate, addButton, on, off, place, remove, addWing, removeWing, connect, dig, fill,
-  addRoad, removeRoad, addGrass, removeGrass, addWater, removeWater, genWorld, setWorld, addDecal, removeDecal, raise: fill, lower: dig, addVox, delVox, typeAt, genTerrain, trimRiverRoads, group, placeBlock, removeBlock, mergeNeighbor, seedCity, undo, redo, clear: clearCity,
+  addRoad, removeRoad, addGrass, removeGrass, windowAll, attachWin, detachWin, addWater, removeWater, genWorld, setWorld, addDecal, removeDecal, raise: fill, lower: dig, addVox, delVox, typeAt, genTerrain, trimRiverRoads, group, placeBlock, removeBlock, mergeNeighbor, seedCity, undo, redo, clear: clearCity,
   select, expand, collapse, rotateBy, exportJSON, importJSON, publishJSON, migrateWorld, addSpurs, setPure, setView, config,
   jumpTo, tickCars: dt => stepCars(dt),
   setCamera(o) { Object.assign(cam, o); if (o.theta != null) goal.theta = cam.theta; if (o.phi != null) goal.phi = cam.phi; orbit = null; updateCamera(); },
@@ -1917,7 +1965,8 @@ const api = {
   get selected() { return Object.assign({}, sel); },
   get scene() { return scene; }, get camera() { return camera; }, get renderer() { return renderer; },
   get cells() { return cells; }, get terrain() { return terrain; }, get columns() { return cols; }, get roads() { return roads; }, get water() { return water; }, get grass() { return grass; }, get blocks() { return blocks; }, get templates() { return TORDER.map(id => TEMPLATES.get(id)); }, get bridges() { return bridges; }, get night() { return night; }, get hover() { return hover; },
-  refresh() { updateCamera(); req(); }
+  refresh() { updateCamera(); req(); },
+  renderNow() { updateCamera(); if (fadeDirty) { fadeDirty = false; updateFade(); } fadeGrid(); renderer.render(scene, camera); }   // 立即按真实一帧渲染（截图用）
 };
 window.CityGame = api;
 emit("loaded", api);
