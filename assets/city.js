@@ -99,7 +99,7 @@ function boxPanes(w, h, { cols, rows = [.5], ph = .6, pr = .55, seed = 1, y0 = 0
     for (let c = 0; c < cols; c++) { const u = -span / 2 + (c + .5) * cw;
       rows.forEach(ry => { const yc = y0 + h * ry, hh = h * ph / 2, hw = pw / 2, cx = nx * half + tx * u, cz = nz * half + tz * u;
         const P = (s, t) => [cx + tx * hw * s, yc + hh * t, cz + tz * hw * s];
-        const c3 = r() < lit ? [1, .82, .42] : [.16, .18, .25];
+        const c3 = r() < lit ? [1, .82, .42] : [.05, .06, .085];
         [P(-1, -1), P(1, -1), P(1, 1), P(-1, -1), P(1, 1), P(-1, 1)].forEach(v => { pos.push(...v); col.push(...c3); }); }); } });
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
@@ -109,7 +109,7 @@ function roundPanes(rad, h, { count = 12, ph = .46, seed = 1, rows = [.5] } = {}
   const r = rng(seed), pos = [], col = [], R = rad + .005, pw = Math.PI * 2 * rad / count * .5;
   for (let i = 0; i < count; i++) { const a = i / count * Math.PI * 2, nx = Math.cos(a), nz = Math.sin(a), tx = -nz, tz = nx;
     rows.forEach(ry => { const cx = nx * R, cz = nz * R, yc = h * ry, hh = h * ph / 2, hw = pw / 2;
-      const P = (s, t) => [cx + tx * hw * s, yc + hh * t, cz + tz * hw * s], c3 = r() < .72 ? [1, .82, .42] : [.16, .18, .25];
+      const P = (s, t) => [cx + tx * hw * s, yc + hh * t, cz + tz * hw * s], c3 = r() < .72 ? [1, .82, .42] : [.05, .06, .085];
       [P(-1, -1), P(1, -1), P(1, 1), P(-1, -1), P(1, 1), P(-1, 1)].forEach(v => { pos.push(...v); col.push(...c3); }); }); }
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
@@ -318,6 +318,7 @@ function palette(night) {
 }
 
 function blendPalette(t) {
+  t = 1 - Math.pow(1 - t, 2.4);                      // 天一擦黑楼体就暗下来，清晨 / 黄昏不会发白
   const a = palette(false), b = palette(true), o = {};
   for (const k in a) o[k] = k === "ambient" || k === "sun" ? a[k] + (b[k] - a[k]) * t : new THREE.Color(a[k]).lerp(new THREE.Color(b[k]), t).getHex();
   return o;
@@ -380,7 +381,7 @@ function initThree() {
   waterLines = new THREE.LineSegments(new THREE.BufferGeometry(), facadeMat);
   scene.add(grassMesh, waterMesh, waterLines);
   pitMesh = new THREE.Mesh(new THREE.BufferGeometry(), pitMat); terrainLine = new THREE.LineBasicMaterial({ color: 0x8d8fa0, transparent: true }); pitEdges = new THREE.LineSegments(new THREE.BufferGeometry(), terrainLine);
-  roadMat = new THREE.MeshBasicMaterial({ color: 0xebebf0, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+  roadMat = new THREE.MeshBasicMaterial({ color: 0xebebf0, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   roadMesh = new THREE.Mesh(new THREE.BufferGeometry(), roadMat); roadLines = new THREE.LineSegments(new THREE.BufferGeometry(), facadeMat);
   roadEdge = new THREE.LineSegments(new THREE.BufferGeometry(), lineMat);
   scene.add(groundTop, pitMesh, pitEdges, roadMesh, roadLines, roadEdge);
@@ -918,7 +919,7 @@ function lanePoints(path) {                                          // 靠右�
   return path.map((k, q) => {
     const [i, j] = ij(k), a = q > 0 ? dir(path[q - 1], k) : dir(k, path[q + 1]), b = q < path.length - 1 ? dir(k, path[q + 1]) : a;
     const same = a[0] === b[0] && a[1] === b[1], rx = -a[1] - (same ? 0 : b[1]), rz = a[0] + (same ? 0 : b[0]);
-    return [i - HALF + .5 + rx * .2, roadLevel(i, j) * L + .003, j - HALF + .5 + rz * .2];
+    const x = i - HALF + .5 + rx * .2, z = j - HALF + .5 + rz * .2; return [x, surfaceY(x, z) + .003, z];
   });
 }
 function spawnCar(mid) {
@@ -972,7 +973,8 @@ function carPose(c) {
   let [hx, hz] = seg(a); const nx = t > .7 ? seg(a + 1) : t < .3 ? seg(a - 1) : null;
   if (nx) { const w = t > .7 ? (t - .7) / .6 : (.3 - t) / .6; hx += (nx[0] - hx) * w; hz += (nx[1] - hz) * w; }
   const hl = Math.hypot(hx, hz) || 1;
-  return { x: A[0] + (B[0] - A[0]) * t, y: A[1] + (B[1] - A[1]) * t, z: A[2] + (B[2] - A[2]) * t, cs: hx / hl, sn: hz / hl };
+  const x = A[0] + (B[0] - A[0]) * t, z = A[2] + (B[2] - A[2]) * t;
+  return { x, y: surfaceY(x, z) + .003, z, cs: hx / hl, sn: hz / hl };
 }
 let carDrawn = 0;
 function drawCars() {
@@ -1017,17 +1019,34 @@ function removeWing(i, j, k, d, u = 0) {
 function setLevel(i, j, h) { if (h) terrain.set(K(i, j), h); else terrain.delete(K(i, j)); rebuildTerrain(); if (roads.size) rebuildRoads(); }
 /* 街道：路面一格一块；只在不接路的一侧画路缘线；直行路段画中线虚线，路口不画 */
 function rebuildRoads() {
-  const tri = [], mark = [], edge = [], L = config.digLevel;
+  computeBridges(); computeRamps();
+  const tri = [], mark = [], edge = [], L = config.digLevel, E = .003, TH = .05;
   const quad = (a, b, c, d) => tri.push(...a, ...b, ...c, ...a, ...c, ...d);
   roads.forEach(key => {
-    const [i, j] = key.split(",").map(Number), x0 = i - HALF, z0 = j - HALF, x1 = x0 + 1, z1 = z0 + 1, cx = x0 + .5, cz = z0 + .5, y = (water.has(key) ? Math.max(0, levelOf(i, j)) : levelOf(i, j)) * L + .003;
-    quad([x0, y, z0], [x0, y, z1], [x1, y, z1], [x1, y, z0]);
-    const nb = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([a, b]) => roads.has(K(i + a, j + b)) && levelOf(i + a, j + b) === levelOf(i, j));
-    const side = [[[x1, z0], [x1, z1]], [[x0, z0], [x0, z1]], [[x0, z1], [x1, z1]], [[x0, z0], [x1, z0]]];
-    nb.forEach((on, q) => { if (!on) { const [[ax, az], [bx, bz]] = side[q]; edge.push(ax, y, az, bx, y, bz); } });
+    const [i, j] = key.split(",").map(Number), x0 = i - HALF, z0 = j - HALF, P = (u, v, dy = E) => [x0 + u, roadY(i, j, u, v) + dy, z0 + v];
+    const ground = levelOf(i, j) * L, bridge = bridgeLv.has(key), r = rampOf.get(key);
+    /* 路面：斜坡分两段画，平路一块 */
+    if (r && r.x) { quad(P(0, 0), P(0, 1), P(.5, 1), P(.5, 0)); quad(P(.5, 0), P(.5, 1), P(1, 1), P(1, 0)); }
+    else if (r) { quad(P(0, 0), P(0, .5), P(1, .5), P(1, 0)); quad(P(0, .5), P(0, 1), P(1, 1), P(1, .5)); }
+    else quad(P(0, 0), P(0, 1), P(1, 1), P(1, 0));
+    const nb = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([a, b]) => linked(i, j, i + a, j + b));
+    const sides = [[[1, 0], [1, 1]], [[0, 0], [0, 1]], [[0, 1], [1, 1]], [[0, 0], [1, 0]]];
+    nb.forEach((on, q) => {
+      if (on) return; const [[ua, va], [ub, vb]] = sides[q], um = (ua + ub) / 2, vm = (va + vb) / 2;
+      [[ua, va, um, vm], [um, vm, ub, vb]].forEach(([u0, v0, u1, v1]) => {
+        edge.push(...P(u0, v0), ...P(u1, v1));
+        if (bridge) {                                     // 桥：桥面侧板 + 栏杆
+          quad(P(u0, v0), P(u1, v1), P(u1, v1, -TH), P(u0, v0, -TH)); edge.push(...P(u0, v0, -TH), ...P(u1, v1, -TH));
+          edge.push(...P(u0, v0, .06), ...P(u1, v1, .06)); for (let w = 0; w < 2; w++) { const uu = u0 + (u1 - u0) * w / 2 + (u1 - u0) / 4, vv = v0 + (v1 - v0) * w / 2 + (v1 - v0) / 4; edge.push(...P(uu, vv), ...P(uu, vv, .06)); }
+        } else if (r) {                                   // 斜坡：侧面封到地面
+          const a = P(u0, v0), b = P(u1, v1); if (a[1] - E > ground + 1e-4 || b[1] - E > ground + 1e-4) quad(a, b, [b[0], ground, b[2]], [a[0], ground, a[2]]);
+        }
+      });
+    });
+    if (bridge) quad(P(0, 0, -TH), P(1, 0, -TH), P(1, 1, -TH), P(0, 1, -TH));   // 桥底
     const cnt = nb.filter(Boolean).length;
     if (cnt && cnt <= 2) [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([a, b], q) => { if (!nb[q]) return;
-      [[.08, .22], [.32, .46]].forEach(([u0, u1]) => mark.push(cx + a * u0, y, cz + b * u0, cx + a * u1, y, cz + b * u1)); });
+      [[.08, .22], [.32, .46]].forEach(([w0, w1]) => mark.push(...P(.5 + a * w0, .5 + b * w0), ...P(.5 + a * w1, .5 + b * w1))); });
   });
   const set = (obj, arr) => { obj.geometry.dispose(); const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(arr, 3)); obj.geometry = g; };
   set(roadMesh, tri); set(roadLines, mark); set(roadEdge, edge); carDirty = true; req();
@@ -1040,12 +1059,48 @@ function removeRoad(i, j) {
   if (!roads.delete(K(i, j))) return false; rebuildRoads(); record({ op: "road-", i, j }); changed(); emit("unroad", { i, j }); return true;
 }
 const inBoard = (i, j) => i >= 0 && j >= 0 && i < N && j < N;
-const roadLevel = (i, j) => water.has(K(i, j)) ? Math.max(0, levelOf(i, j)) : levelOf(i, j);   // 过河的路是桥，高度取河岸
+/* 路面高度（层）：过河的路是桥，桥面比两岸高一层、比河床至少高两层，桥下看得到河；
+   相邻两格路面只要高度不同，低的那格就做成斜坡接上去（车可以开） */
+const RAMP = Infinity, bridgeLv = new Map(), rampOf = new Map();
+const roadLevel = (i, j) => { const k = K(i, j); return bridgeLv.has(k) ? bridgeLv.get(k) : levelOf(i, j); };
+const linked = (i, j, a, b) => roads.has(K(a, b)) && Math.abs(roadLevel(a, b) - roadLevel(i, j)) <= RAMP;
 function roadNb(k) {
-  const [i, j] = k.split(",").map(Number), y = roadLevel(i, j), out = [];
-  FACES.forEach(([a, b]) => { const kk = K(i + a, j + b); if (roads.has(kk) && roadLevel(i + a, j + b) === y) out.push(kk); });
+  const [i, j] = k.split(",").map(Number), out = [];
+  FACES.forEach(([a, b]) => { if (linked(i, j, i + a, j + b)) out.push(K(i + a, j + b)); });
   return out;
 }
+function computeBridges() {
+  bridgeLv.clear();
+  roads.forEach(k => {
+    if (!water.has(k) || bridgeLv.has(k)) return;
+    const [i, j] = k.split(",").map(Number), ax = roads.has(K(i + 1, j)) || roads.has(K(i - 1, j)) ? [1, 0] : [0, 1];
+    const run = [k], banks = []; let bed = levelOf(i, j);
+    [1, -1].forEach(sg => { for (let q = 1; q < N; q++) {
+      const a = i + ax[0] * sg * q, b = j + ax[1] * sg * q, kk = K(a, b);
+      if (!roads.has(kk) || !water.has(kk)) { banks.push(levelOf(a, b)); break; }
+      run.push(kk); bed = Math.max(bed, levelOf(a, b)); } });
+    const deck = Math.max(...banks.map(v => v + 1), bed + 2);
+    run.forEach(x => bridgeLv.set(x, deck));
+  });
+}
+/* 斜坡：只做在低的那格上，从远端（本格高度）升到与高邻格相接的一边；两头都高时中间低 */
+function computeRamps() {
+  rampOf.clear();
+  roads.forEach(k => {
+    const [i, j] = k.split(",").map(Number), c = roadLevel(i, j);
+    const up = (a, b) => linked(i, j, a, b) && roadLevel(a, b) > c ? roadLevel(a, b) : c;
+    const xa = up(i - 1, j), xb = up(i + 1, j), za = up(i, j - 1), zb = up(i, j + 1);
+    if (xa > c || xb > c) rampOf.set(k, { x: true, a: xa, b: xb, c });
+    else if (za > c || zb > c) rampOf.set(k, { x: false, a: za, b: zb, c });
+  });
+}
+/* 格内某点（u,v ∈ 0..1）的路面高度（世界单位） */
+function roadY(i, j, u, v) {
+  const L = config.digLevel, r = rampOf.get(K(i, j)); if (!r) return roadLevel(i, j) * L;
+  const t = r.x ? u : v, lerp = (p, q, w) => (p + (q - p) * w) * L;
+  return r.a > r.c && r.b > r.c ? (t < .5 ? lerp(r.a, r.c, t * 2) : lerp(r.c, r.b, t * 2 - 1)) : lerp(r.a, r.b, t);
+}
+function surfaceY(x, z) { const i = Math.floor(x + HALF), j = Math.floor(z + HALF); return roadY(i, j, x + HALF - i, z + HALF - j); }
 const deadEnds = () => [...roads].filter(k => roadNb(k).length === 1);
 /* 断头路：路网外圈每边挑几条通到边上的路，继续向外延伸若干格（平地、无楼无水、不贴着别的路），车从这些尽头出入 */
 function addSpurs(seed, per = 3) {
@@ -1707,7 +1762,7 @@ function buildUI() {
     else if (b.dataset.wl != null) { sel.wlit = +b.dataset.wl; select(); }
     else if (b.dataset.ws) { sel.wsz = b.dataset.ws; select(); }
     else if (b.dataset.decal) { sel.decal = sel.decal === b.dataset.decal ? null : b.dataset.decal; sel.tpl = null; sel.view = false; select(); }
-    else if (b.dataset.act === "view") setView(true); else if (b.dataset.act === "pure") setPure(true);
+    else if (b.dataset.act === "view") setView(!sel.view); else if (b.dataset.act === "pure") setPure(true);
     else if (b.dataset.act === "undo") undo(); else if (b.dataset.act === "redo") redo();
     else if (b.dataset.x != null) { const x = extraButtons[+b.dataset.x]; if (x && x.onClick) x.onClick(api); }
   });

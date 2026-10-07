@@ -1221,7 +1221,7 @@ function renderFeed(){
     +(state.composerImgs.length?imgBufHTML("c"):'')+'<div class="row2"><input id="composerImg" placeholder="emoji / 图片URL" value="'+esc(state.composerImgText||"")+'"><button class="btn soft" data-action="post-img-add" data-k="c">＋ 上传图片</button><div class="spacer" style="flex:1"></div><button class="btn" data-action="post-new">发布动态</button></div></div>':'';
   const all=DATA.feed.filter(p=>state.editMode||!p.hidden);
   const list=state.feedMonth?all.filter(p=>String(p.date||"").slice(0,7)===state.feedMonth):all;
-  app.innerHTML='<div class="with-rail feed-layout">'+feedSideHTML(all)+'<div><div class="feed"><div class="page-h"><div class="ph-title">DAILY LOG</div><span class="cnt">'+list.length+'</span></div>'+composer
+  app.innerHTML='<div class="with-rail feed-layout">'+feedSideHTML(all)+'<div><div class="feed"><div class="page-h"><div class="ph-title">DAILY LOG</div></div>'+composer
     +(all.length?all.map(p=>{const h=postHTML(p,false);return state.feedMonth&&String(p.date||"").slice(0,7)!==state.feedMonth?h.replace('<div class="post','<div style="display:none" class="post'):h;}).join(""):'<div class="empty">还没有动态</div>')+'</div></div><aside class="rail"><div class="rail-scroll">'+railPhotosHTML()+'</div></aside></div>';
   applyAllPV();
 }
@@ -1588,7 +1588,7 @@ function renderFav(){
   if(!DATA.fav.length){app.innerHTML='<div class="fav"><aside class="panel fav-side">'+sideHTML()+'</aside><section>'
     +'<div class="fav-main-head"><h1>收藏</h1><div class="spacer" style="flex:1"></div>'+(em?'<button class="btn" data-action="fav-add-open">＋ 收藏网页/视频</button>':'')+'</div>'
     +'<div class="empty">还没有收藏</div></section><aside class="rail rail-c"><div class="rail-scroll">'+railContactsHTML()+'</div></aside></div>';return;}
-  const head='<div class="fav-main-head"><h1>'+esc(cur.name)+'</h1><span class="cnt" style="font-family:var(--mono);font-size:12px;color:var(--text-dim)">'+(cur.items||[]).length+'</span><div class="spacer" style="flex:1"></div>'
+  const head='<div class="fav-main-head"><h1>'+esc(cur.name)+'</h1><div class="spacer" style="flex:1"></div>'
     +(em?'<button class="btn sm link" data-action="fav-folder-rename" data-i="'+state.favFolder+'">重命名</button><button class="btn sm link" data-action="fav-folder-hide" data-i="'+state.favFolder+'">'+(cur.hidden?'取消隐藏':'隐藏')+'</button><button class="btn sm danger" data-action="fav-folder-del" data-i="'+state.favFolder+'">删除夹</button><button class="btn" data-action="fav-add-open">＋ 收藏网页/视频</button>':'')+'</div>';
   app.innerHTML='<div class="fav"><aside class="panel fav-side">'+sideHTML()+'</aside><section>'+head+grid+'</section><aside class="rail rail-c"><div class="rail-scroll">'+railContactsHTML()+'</div></aside></div>';
 }
@@ -1896,7 +1896,7 @@ function railPhotosHTML(){
     +'<img src="'+esc(p.src)+'" alt="" draggable="false"'+(photoSeen.has(p.src)?' class="ok"':'')+' onload="photoLoaded(this)">'
     +(em?'<button class="mini danger pdel" data-action="photo-del" data-id="'+p.id+'">删除</button>':'')
     +'</div>';}).join("");
-  return railPanel("PHOTOS",ps.length,ps.length?'<div class="photowall">'+items+'</div>':'',
+  return railPanel("PHOTOS",null,ps.length?'<div class="photowall">'+items+'</div>':'',
     em?'<button class="btn sm soft rp-tool" data-action="photo-add">上传照片</button>':'');
 }
 
@@ -2001,7 +2001,7 @@ function railContactsHTML(){
     if(c.value)return '<div class="contact" data-action="contact-copy" data-v="'+esc(c.value)+'"'+t+'>'+inner+'</div>';
     return '<div class="contact"'+t+'>'+inner+'</div>';
   }).join("");
-  return railPanel("CONTACT",cs.length,'<div class="contacts">'+tiles+'</div>',
+  return railPanel("CONTACT",null,'<div class="contacts">'+tiles+'</div>',
     em?'<button class="btn sm soft rp-tool" data-action="contact-edit">编辑联系方式</button>':'');
 }
 function openContacts(){
@@ -2321,7 +2321,7 @@ boot();
 <script type="importmap">{"imports":{"three":"./assets/vendor/three.module.min.js"}}</script>
 <script type="module">
   /* 右下角城市只在桌面宽度加载；窗口从窄拉宽时再加载 */
-  const mq=matchMedia("(min-width:1081px)"),go=()=>{if(mq.matches)import("./assets/city.js?v=20261007x");};
+  const mq=matchMedia("(min-width:1081px)"),go=()=>{if(mq.matches)import("./assets/city.js?v=20261007y");};
   go();mq.addEventListener("change",go);
 </script>
 
