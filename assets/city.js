@@ -460,10 +460,12 @@ function rebuildTerrain() {
   data.fill(255);
   const quad = (T, Cc, c, a, b, cc, d) => { T.push(...a, ...b, ...cc, ...a, ...cc, ...d); for (let q = 0; q < 6; q++) Cc.push(c.r, c.g, c.b); };
   const NB = (i, j, x0, x1, z0, z1) => [[i + 1, j, x1, z0, x1, z1], [i - 1, j, x0, z1, x0, z0], [i, j + 1, x1, z1, x0, z1], [i, j - 1, x0, z0, x1, z0]];
-  const runsAt = (i, j) => inBoard(i, j) ? colOf(K(i, j)) : DEF();
+  const WS = .07;                                                       // 水面比方块顶低一点
+  /* 挡住邻格侧面的范围：顶上露天的水块只挡到水面（否则水面和方块顶之间会漏出一条透明缝） */
+  const occ = runs => runs.map((r, q) => r.t === "w" && !(runs[q + 1] && runs[q + 1].a === r.b) ? { a: r.a, b: r.b - WS / L, t: r.t } : r);
+  const runsAt = (i, j) => occ(inBoard(i, j) ? colOf(K(i, j)) : DEF());
   const minus = (a, b, runs) => { let segs = [[a, b]];                   // [a,b) 去掉邻格方块挡住的部分 = 露出来的侧面
     runs.forEach(r => { segs = segs.flatMap(([x, y]) => r.b <= x || r.a >= y ? [[x, y]] : [[x, Math.max(x, r.a)], [Math.min(y, r.b), y]].filter(([u, v]) => v > u)); }); return segs; };
-  const WS = .07;                                                       // 水面比方块顶低一点
   cols.forEach((runs, key) => {
     const [i, j] = key.split(",").map(Number), x0 = i - HALF, x1 = x0 + 1, z0 = j - HALF, z1 = z0 + 1;
     const px = ((M - 1 - (j + 1)) * M + (i + 1)) * 4; data[px] = data[px + 1] = data[px + 2] = data[px + 3] = 0;
@@ -489,7 +491,7 @@ function rebuildTerrain() {
     /* 默认地基的邻格（不在 cols 里）朝这格露出来的侧面，例如挖坑的四壁 */
     NB(i, j, x0, x1, z0, z1).forEach(([ni, nj, ax, az, bx, bz]) => {
       if (!inBoard(ni, nj) || cols.has(K(ni, nj))) return;
-      minus(B0, 0, runs).forEach(([s0, s1]) => quad(tri, col, cWall, [bx, s0 * L, bz], [ax, s0 * L, az], [ax, s1 * L, az], [bx, s1 * L, bz]));
+      minus(B0, 0, occ(runs)).forEach(([s0, s1]) => quad(tri, col, cWall, [bx, s0 * L, bz], [ax, s0 * L, az], [ax, s1 * L, az], [bx, s1 * L, bz]));
     });
   });
   digMask.needsUpdate = true;
