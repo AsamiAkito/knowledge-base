@@ -355,7 +355,7 @@ if (!FLOORS.has(sel.t) || FLOORS.get(sel.t).hidden) sel.t = "grid";
 sel.view = true; sel.tpl = null; sel.decal = null;
 if (sel.wsz === "L") sel.wsz = "T"; if (!["S", "M", "T"].includes(sel.wsz)) sel.wsz = "M"; if (sel.wlit == null) sel.wlit = 1;
 const decalType = () => sel.decal === "window" ? "win:" + sel.wsz + ":" + (sel.wlit ? 1 : 0) + ":" + (sel.wrot ? 1 : 0) : sel.decal;                // 打开时默认观赏模式（鼠标按钮）
-const paneLight = { value: 0 }; let paneVis = null;
+const paneLight = { value: 0 }, waterTime = { value: 0 }; let paneVis = null;
 let night = false, hover = null, expanded = false, tAnchor = null, drag = null;
 
 /* ---------------- three.js 场景 ---------------- */
@@ -398,6 +398,27 @@ function initThree() {
   pitMat = new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
   grassMat = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
   waterMat = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, side: THREE.DoubleSide });
+  /* flow 属性：xy = 水面流向，z = 0 水面 / 1 落差面（瀑布）/ 2 水沫 */
+  waterMat.onBeforeCompile = sh => {
+    sh.uniforms.uTime = waterTime;
+    sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nattribute vec3 flow;\nvarying vec3 vFlow;\nvarying vec3 vWPos;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvFlow = flow;\nvWPos = position;");
+    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nuniform float uTime;\nvarying vec3 vFlow;\nvarying vec3 vWPos;")
+      .replace("#include <color_fragment>", [
+        "#include <color_fragment>",
+        "{ vec2 fl = length(vFlow.xy) > 0.01 ? normalize(vFlow.xy) : vec2(0.0, 1.0);",
+        "  float al = dot(vWPos.xz, fl), ac = dot(vWPos.xz, vec2(-fl.y, fl.x)), hi = 0.0;",
+        "  if (vFlow.z < 0.5) {",                                   // 水面：顺流方向一段段的细波纹，往下游漂
+        "    float s = sin(al * 7.0 - uTime * 1.6 + sin(ac * 5.0 + al * 1.3) * 1.4);",
+        "    hi = smoothstep(0.9, 0.99, s) * smoothstep(0.35, 0.8, 0.5 + 0.5 * sin(ac * 9.0 + al * 0.7 + 1.3)) * 0.8;",
+        "  } else if (vFlow.z < 1.5) {",                            // 落差面：竖向水纹往下流
+        "    float s = sin(vWPos.y * 22.0 + uTime * 5.0 + sin((vWPos.x + vWPos.z) * 13.0) * 2.0);",
+        "    hi = smoothstep(0.55, 1.0, s) * 0.5;",
+        "  } else {",                                               // 水沫：几乎全白，轻微闪动
+        "    hi = 0.8 + 0.2 * sin(uTime * 3.0 + (vWPos.x + vWPos.z) * 25.0);",
+        "  }",
+        "  diffuseColor.rgb = mix(diffuseColor.rgb, diffuse, hi); }"].join("\n"));
+  };
   terrainLine = new THREE.LineBasicMaterial({ color: 0x8d8fa0, transparent: true });
   terrainGroup = new THREE.Group(); scene.add(terrainGroup); pitMesh = terrainGroup;     // pitMesh 只作「地形已就绪」的标记
   roadMat = new THREE.MeshBasicMaterial({ color: 0xebebf0, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
@@ -440,9 +461,11 @@ function initThree() {
       if (panKeys.has("d")) { mx += -fz; mz += fx; } if (panKeys.has("a")) { mx -= -fz; mz -= fx; }
       if (mx || mz) { cam.tx += mx * sp; cam.tz += mz * sp; orbit = null; updateCamera(); }
     }
+    const editing = expanded && !sel.view; if (editing !== loop.ed) { loop.ed = editing; setTimePaused(editing); }   // 编辑模式：所有动态都停
     if (now - (loop.ck || 0) > 500) { loop.ck = now; updateClock(); }
     /* 编辑模式车辆停住，只在操作时重绘 */
     if (host && !document.hidden && (expanded ? sel.view : cityVisible) && now - carLast >= (expanded ? 0 : 50)) { stepCars(Math.min(.1, (now - carLast) / 1000)); carLast = now; }
+    if (host && !document.hidden && (expanded ? sel.view : cityVisible) && now - (loop.wt || 0) > 200) { loop.wt = now; waterTime.value = now / 1000; req(); }   // 水流约 5 帧/秒
     if (dirtyCells.size) { dirtyCells.forEach(bakeCell); dirtyCells.clear(); }
     if (fadeDirty) { fadeDirty = false; updateFade(); }
     if (!needs || !host) return; needs = false; fadeGrid(); renderer.render(scene, camera); emit("render");
@@ -475,12 +498,20 @@ function rebuildTerrain(changed) {
 function buildChunk(ck) {
   const [ci, cj] = ck.split(",").map(Number), old = chunks.get(ck);
   if (old) { terrainGroup.remove(old.group); old.group.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
-  const M = N + 2, data = digMask.image.data, L = config.digLevel, B0 = BASE(), tri = [], col = [], gtri = [], gcol = [], wtri = [], wcol = [], wav = [];
+  const M = N + 2, data = digMask.image.data, L = config.digLevel, B0 = BASE(), tri = [], col = [], gtri = [], gcol = [], wtri = [], wcol = [], wfl = [];
   const p = palette(false), C = h => new THREE.Color(h), cLow = C(p.tLow), cHigh = C(p.tHigh), cWall = C(p.tWall), cPit = C(p.tPit),
     gLow = C(p.gLow), gHigh = C(p.gHigh), cWater = C(p.water), cFall = C(p.waterFall), top = config.raiseMax,
     cUnder = cWall.clone().multiplyScalar(.82), cGrassSide = gHigh.clone().lerp(cWall, .45);
   const quad = (T, Cc, c, a, b, cc, d) => { T.push(...a, ...b, ...cc, ...a, ...cc, ...d); for (let q = 0; q < 6; q++) Cc.push(c.r, c.g, c.b); };
   const NB = (i, j, x0, x1, z0, z1) => [[i + 1, j, x1, z0, x1, z1], [i - 1, j, x0, z1, x0, z0], [i, j + 1, x1, z1, x0, z1], [i, j - 1, x0, z0, x1, z0]];
+  /* 水的四边形：同时记流向与类型（0 水面 / 1 落差面 / 2 水沫） */
+  const wq = (c, fl, a, b, cc, d) => { quad(wtri, wcol, c, a, b, cc, d); for (let q = 0; q < 6; q++) wfl.push(fl[0], fl[1], fl[2]); };
+  const cFoam = new THREE.Color(0xffffff);
+  const waterTop = (i, j) => { const c = inBoard(i, j) ? cols.get(K(i, j)) : null, t = c && c[c.length - 1]; return t && t.t === "w" ? t.b : null; };
+  /* 流向：往比自己低的相邻水面流；一样高时顺着水连着的方向（河从北往南、从西往东） */
+  const flowOf = (i, j, b) => { let best = null, bh = b, ax = 0, az = 0;
+    [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([a, c]) => { const t = waterTop(i + a, j + c); if (t == null) return; if (t < bh) { bh = t; best = [a, c]; } ax += Math.abs(a); az += Math.abs(c); });
+    return best || (az >= ax ? [0, 1] : [1, 0]); };
   const WS = .07;                                                       // 水面比方块顶低一点
   /* 挡住邻格侧面的范围：顶上露天的水块只挡到水面（否则水面和方块顶之间会漏出一条透明缝） */
   const occ = runs => runs.map((r, q) => r.t === "w" && !(runs[q + 1] && runs[q + 1].a === r.b) ? { a: r.a, b: r.b - WS / L, t: r.t } : r);
@@ -497,16 +528,23 @@ function buildChunk(ck) {
     runs.forEach((r, q) => {
       const up = runs[q + 1], dn = runs[q - 1], y = r.b * L;
       if (!up || up.a > r.b) {                                                             // 顶面
-        if (r.t === "w") { flat(wtri, wcol, cWater, y - WS); const o = ((i * 7 + j * 13) % 5) / 10, yw = y - WS + .002;
-          wav.push(x0 + .15 + o * .5, yw, z0 + .3, x0 + .45 + o * .5, yw, z0 + .3, x0 + .3 - o * .2, yw, z0 + .72, x0 + .62 - o * .2, yw, z0 + .72); }
+        if (r.t === "w") { const fl = flowOf(i, j, r.b), yw = y - WS;
+          wq(cWater, [fl[0], fl[1], 0], [x0, yw, z0], [x1, yw, z0], [x1, yw, z1], [x0, yw, z1]);
+          /* 落差：相邻水面比这里低时，这边缘一条水沫，对面落点一片水花 */
+          NB(i, j, x0, x1, z0, z1).forEach(([ni, nj, ax, az, bx, bz]) => {
+            const nt = waterTop(ni, nj); if (nt == null || nt >= r.b) return;
+            const dx = ni - i, dz = nj - j, yl = yw + .003, yb = nt * L - WS + .003;
+            wq(cFoam, [dx, dz, 2], [ax - dx * .1, yl, az - dz * .1], [bx - dx * .1, yl, bz - dz * .1], [bx, yl, bz], [ax, yl, az]);
+            wq(cFoam, [dx, dz, 2], [ax, yb, az], [bx, yb, bz], [bx + dx * .22, yb, bz + dz * .22], [ax + dx * .22, yb, az + dz * .22]);
+          }); }
         else { flat(tri, col, r.b < 0 ? cPit : cLow.clone().lerp(cHigh, Math.max(0, Math.min(1, r.b / top))), y);
           if (r.t === "g") flat(gtri, gcol, gLow.clone().lerp(gHigh, Math.max(0, Math.min(1, r.b / top))), y + .002); }
       }
-      if (r.a > B0 && (!dn || dn.b < r.a)) flat(r.t === "w" ? wtri : tri, r.t === "w" ? wcol : col, r.t === "w" ? cFall : cUnder, r.a * L);   // 悬空的底面
+      if (r.a > B0 && (!dn || dn.b < r.a)) { if (r.t === "w") wq(cFall, [0, 0, 1], [x0, r.a * L, z0], [x1, r.a * L, z0], [x1, r.a * L, z1], [x0, r.a * L, z1]); else flat(tri, col, cUnder, r.a * L); }   // 悬空的底面
       NB(i, j, x0, x1, z0, z1).forEach(([ni, nj, ax, az, bx, bz]) => {
         minus(r.a, r.b, runsAt(ni, nj)).forEach(([s0, s1]) => {
           const ya = s0 * L, yb = s1 === r.b && r.t === "w" && !(up && up.a === r.b) ? s1 * L - WS : s1 * L;
-          if (r.t === "w") quad(wtri, wcol, cFall, [ax, ya, az], [bx, ya, bz], [bx, yb, bz], [ax, yb, az]);
+          if (r.t === "w") wq(cFall, [0, 0, 1], [ax, ya, az], [bx, ya, bz], [bx, yb, bz], [ax, yb, az]);
           else quad(tri, col, r.t === "g" && s1 === r.b ? cGrassSide : cWall, [ax, ya, az], [bx, ya, bz], [bx, yb, bz], [ax, yb, az]);
         });
       });
@@ -522,8 +560,8 @@ function buildChunk(ck) {
   const group = new THREE.Group(), meshes = [];
   if (tri.length) { const g = mk(tri, col, true), m = new THREE.Mesh(g, pitMat); group.add(m, new THREE.LineSegments(new THREE.EdgesGeometry(g, 30), terrainLine)); meshes.push(m); }
   if (gtri.length) { const m = new THREE.Mesh(mk(gtri, gcol, true), grassMat); group.add(m); meshes.push(m); }
-  if (wtri.length) { const m = new THREE.Mesh(mk(wtri, wcol, false), waterMat); group.add(m); meshes.push(m);
-    const wl = new THREE.BufferGeometry(); wl.setAttribute("position", new THREE.Float32BufferAttribute(wav, 3)); group.add(new THREE.LineSegments(wl, facadeMat)); }
+  if (wtri.length) { const g = mk(wtri, wcol, false); g.setAttribute("flow", new THREE.Float32BufferAttribute(wfl, 3));
+    const m = new THREE.Mesh(g, waterMat); group.add(m); meshes.push(m); }
   terrainGroup.add(group); chunks.set(ck, { group, meshes });
 }
 function accent() { return getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#0e8fbc"; }
@@ -1702,18 +1740,25 @@ addEventListener("blur", () => { stopHold("space"); stopHold("del"); stopHold("f
    傍晚城市渐暗、窗户逐盏亮灯，车灯一次全开；清晨渐亮、灯逐盏熄灭。
    切换网页明暗（~ 键或主题按钮）时，城里时间跳到中午 / 夜里 10 点，之后照常走 */
 function themeNight() { return document.documentElement.getAttribute("data-theme") === "dark"; }
-let dark = 0, light = 0, hourFix = null;
+let dark = 0, light = 0, hourFix = null, pausedHour = null;
 const KEY_CLOCK = "myspace-city-clock";
 let clockOffset = (() => { try { return +localStorage.getItem(KEY_CLOCK) || 0; } catch (e) { return 0; } })();
 function jumpTo(h) {                                       // 让城里此刻变成 h 点（存本机，之后从这里继续走）
+  if (pausedHour != null) { pausedHour = ((h % 24) + 24) % 24; updateClock(true); return; }   // 编辑中时间停着：只换停住的那一刻
   const ms = config.dayMinutes * 60000, now = ((Date.now() + clockOffset) % ms + ms) % ms;
   clockOffset = ((clockOffset + h / 24 * ms - now) % ms + ms) % ms;
   try { localStorage.setItem(KEY_CLOCK, String(Math.round(clockOffset))); } catch (e) { }
   hourFix = null; updateClock(true);
 }
 const smooth = t => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); };
-function cityHour() { if (hourFix != null) return hourFix; const ms = config.dayMinutes * 60000; return (((Date.now() + clockOffset) % ms + ms) % ms) / ms * 24; }
-function darkAt(h) { return h < 5 ? 1 : h < 7.5 ? 1 - smooth((h - 5) / 2.5) : h < 17 ? 0 : h < 20 ? smooth((h - 17) / 3) : 1; }
+/* 编辑模式下时间暂停（昼夜、亮灯、背景都停住），回到观赏模式时从停住的那一刻接着走 */
+function setTimePaused(on) {
+  if (on && pausedHour == null) pausedHour = cityHour();
+  else if (!on && pausedHour != null) { const h = pausedHour; pausedHour = null; jumpTo(h); }
+}
+function cityHour() { if (hourFix != null) return hourFix; if (pausedHour != null) return pausedHour; const ms = config.dayMinutes * 60000; return (((Date.now() + clockOffset) % ms + ms) % ms) / ms * 24; }
+/* 清晨亮得慢：5–7 点从全黑到四成多暗，7–9 点才慢慢亮透，早上光线不足 */
+function darkAt(h) { return h < 5 ? 1 : h < 7 ? 1 - .55 * smooth((h - 5) / 2) : h < 9 ? .45 * (1 - smooth((h - 7) / 2)) : h < 17 ? 0 : h < 20 ? smooth((h - 17) / 3) : 1; }
 function lightAt(h) { return h < 4.5 ? 1 : h < 7.5 ? 1 - (h - 4.5) / 3 : h < 17.5 ? 0 : h < 21 ? (h - 17.5) / 3.5 : 1; }
 function updateClock(force) {
   const h = cityHour(), d = darkAt(h), l = lightAt(h);
@@ -2000,6 +2045,7 @@ const api = {
   jumpTo, tickCars: dt => stepCars(dt),
   setCamera(o) { Object.assign(cam, o); if (o.theta != null) goal.theta = cam.theta; if (o.phi != null) goal.phi = cam.phi; orbit = null; updateCamera(); },
   get cam() { return Object.assign({}, cam); },
+  setTimePaused, get timePaused() { return pausedHour != null; },
   setHour(h) { hourFix = h == null ? null : ((+h % 24) + 24) % 24; updateClock(true); },
   get hour() { return cityHour(); }, get started() { return started; }, get cars() { return cars; }, sizes: SIZES, helpers, three: THREE,
   get floors() { return ORDER.map(id => FLOORS.get(id)); },
