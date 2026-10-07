@@ -404,9 +404,9 @@ function initThree() {
      flow.xy = 水流方向，flow.z = 0 水面 / 1 落差面 / 2 落差水沫；bank = 这格四边（+x −x +z −z）哪几边是岸 */
   waterMat.onBeforeCompile = sh => {
     sh.uniforms.uTime = waterTime; sh.uniforms.uFlow = waterFlowOn;
-    sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nattribute vec3 flow;\nattribute vec4 bank;\nvarying vec3 vFlow;\nvarying vec4 vBank;\nvarying vec3 vWPos;")
-      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvFlow = flow;\nvBank = bank;\nvWPos = position;");
-    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nuniform float uTime;\nuniform float uFlow;\nvarying vec3 vFlow;\nvarying vec4 vBank;\nvarying vec3 vWPos;")
+    sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nattribute vec3 flow;\nattribute vec4 bank;\nattribute vec4 corn;\nvarying vec3 vFlow;\nvarying vec4 vBank;\nvarying vec4 vCorn;\nvarying vec3 vWPos;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvFlow = flow;\nvBank = bank;\nvCorn = corn;\nvWPos = position;");
+    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nuniform float uTime;\nuniform float uFlow;\nvarying vec3 vFlow;\nvarying vec4 vBank;\nvarying vec4 vCorn;\nvarying vec3 vWPos;")
       .replace("#include <color_fragment>", [
         "#include <color_fragment>",
         "if (vFlow.z < 0.5) {",
@@ -416,14 +416,21 @@ function initThree() {
         "  if (vBank.y > 0.5 && c.x < d) { d = c.x; al = vWPos.z; }",
         "  if (vBank.z > 0.5 && 1.0 - c.y < d) { d = 1.0 - c.y; al = vWPos.x; }",
         "  if (vBank.w > 0.5 && c.y < d) { d = c.y; al = vWPos.x; }",
+        /* 四个角：corn = 1 内凹（斜对角是岸，两侧是水）→ 到角点的距离；2 外凸（两侧都是岸）→ 圆弧 */
+        "  vec2 P[4]; P[0] = vec2(1.0, 1.0); P[1] = vec2(1.0, 0.0); P[2] = vec2(0.0, 1.0); P[3] = vec2(0.0, 0.0);",
+        "  float K[4]; K[0] = vCorn.x; K[1] = vCorn.y; K[2] = vCorn.z; K[3] = vCorn.w;",
+        "  const float RR = 0.42;",
+        "  for (int q = 0; q < 4; q++) {",
+        "    vec2 p = P[q], s = sign(p - 0.5);",
+        "    if (K[q] > 0.5 && K[q] < 1.5) { float e = length(c - p); if (e < d) { d = e; al = vWPos.x + vWPos.z; } }",
+        "    else if (K[q] > 1.5) { vec2 o = p - s * RR, t = (c - o) * s; if (t.x > 0.0 && t.y > 0.0) d = max(0.0, RR - length(c - o)); }",
+        "  }",
         "  diffuseColor.rgb *= mix(1.1, 0.84, smoothstep(0.0, 0.42, d));",  // 靠岸浅、河心深
         "  float foam = 1.0 - smoothstep(0.035, 0.06, d);",                 // 贴岸一条细水沫
         "  vec2 fl = length(vFlow.xy) > 0.01 ? normalize(vFlow.xy) : vec2(0.0, 1.0);",
         "  float sgn = abs(fl.x) > abs(fl.y) ? sign(fl.x) : sign(fl.y);",    // 短线顺水流方向移动
         "  float dash = step(0.62, fract(al * 2.5 - sgn * uTime * 0.18 * uFlow)) * (1.0 - smoothstep(0.1, 0.13, d)) * smoothstep(0.08, 0.1, d);",
         "  diffuseColor.rgb = mix(diffuseColor.rgb, diffuse, max(foam * 0.85, dash * 0.55));",
-        "} else if (vFlow.z > 1.5) {",
-        "  diffuseColor.rgb = mix(diffuseColor.rgb, diffuse, 0.85);",       // 落差边缘与落点的水沫
         "}"].join("\n"));
   };
   terrainLine = new THREE.LineBasicMaterial({ color: 0x8d8fa0, transparent: true });
@@ -505,15 +512,14 @@ function rebuildTerrain(changed) {
 function buildChunk(ck) {
   const [ci, cj] = ck.split(",").map(Number), old = chunks.get(ck);
   if (old) { terrainGroup.remove(old.group); old.group.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
-  const M = N + 2, data = digMask.image.data, L = config.digLevel, B0 = BASE(), tri = [], col = [], gtri = [], gcol = [], wtri = [], wcol = [], wfl = [], wbk = [];
+  const M = N + 2, data = digMask.image.data, L = config.digLevel, B0 = BASE(), tri = [], col = [], gtri = [], gcol = [], wtri = [], wcol = [], wfl = [], wbk = [], wcn = [];
   const p = palette(false), C = h => new THREE.Color(h), cLow = C(p.tLow), cHigh = C(p.tHigh), cWall = C(p.tWall), cPit = C(p.tPit),
     gLow = C(p.gLow), gHigh = C(p.gHigh), cWater = C(p.water), cFall = C(p.waterFall), top = config.raiseMax,
     cUnder = cWall.clone().multiplyScalar(.82), cGrassSide = gHigh.clone().lerp(cWall, .45);
   const quad = (T, Cc, c, a, b, cc, d) => { T.push(...a, ...b, ...cc, ...a, ...cc, ...d); for (let q = 0; q < 6; q++) Cc.push(c.r, c.g, c.b); };
   const NB = (i, j, x0, x1, z0, z1) => [[i + 1, j, x1, z0, x1, z1], [i - 1, j, x0, z1, x0, z0], [i, j + 1, x1, z1, x0, z1], [i, j - 1, x0, z0, x1, z0]];
   /* 水的四边形：同时记流向与类型（0 水面 / 1 落差面 / 2 水沫） */
-  const wq = (c, fl, a, b, cc, d, bk = [0, 0, 0, 0]) => { quad(wtri, wcol, c, a, b, cc, d); for (let q = 0; q < 6; q++) { wfl.push(fl[0], fl[1], fl[2]); wbk.push(...bk); } };
-  const cFoam = new THREE.Color(0xffffff);
+  const wq = (c, fl, a, b, cc, d, bk = [0, 0, 0, 0], cn = [0, 0, 0, 0]) => { quad(wtri, wcol, c, a, b, cc, d); for (let q = 0; q < 6; q++) { wfl.push(fl[0], fl[1], fl[2]); wbk.push(...bk); wcn.push(...cn); } };
   const waterTop = (i, j) => { const c = inBoard(i, j) ? cols.get(K(i, j)) : null, t = c && c[c.length - 1]; return t && t.t === "w" ? t.b : null; };
   /* 流向：往比自己低的相邻水面流；一样高时顺着水连着的方向（河从北往南、从西往东） */
   const flowOf = (i, j, b) => { let best = null, bh = b, ax = 0, az = 0;
@@ -537,14 +543,10 @@ function buildChunk(ck) {
       if (!up || up.a > r.b) {                                                             // 顶面
         if (r.t === "w") { const fl = flowOf(i, j, r.b), yw = y - WS;
           const bk = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([a, c]) => waterTop(i + a, j + c) == null ? 1 : 0);   // 邻格不是水 = 岸
-          wq(cWater, [fl[0], fl[1], 0], [x0, yw, z0], [x1, yw, z0], [x1, yw, z1], [x0, yw, z1], bk);
-          /* 落差：相邻水面比这里低时，这边缘一条水沫，对面落点一片水花 */
-          NB(i, j, x0, x1, z0, z1).forEach(([ni, nj, ax, az, bx, bz]) => {
-            const nt = waterTop(ni, nj); if (nt == null || nt >= r.b) return;
-            const dx = ni - i, dz = nj - j, yl = yw + .003, yb = nt * L - WS + .003;
-            wq(cFoam, [dx, dz, 2], [ax - dx * .1, yl, az - dz * .1], [bx - dx * .1, yl, bz - dz * .1], [bx, yl, bz], [ax, yl, az]);
-            wq(cFoam, [dx, dz, 2], [ax, yb, az], [bx, yb, bz], [bx + dx * .22, yb, bz + dz * .22], [ax + dx * .22, yb, az + dz * .22]);
-          }); }
+          /* 四个角 (+x+z, +x−z, −x+z, −x−z)：两侧都是岸 = 外凸（2），两侧是水但斜对角是岸 = 内凹（1） */
+          const cn = [[1, 1, 0, 2], [1, -1, 0, 3], [-1, 1, 1, 2], [-1, -1, 1, 3]].map(([a, c, sx, sz]) => bk[sx] && bk[sz] ? 2 : !bk[sx] && !bk[sz] && waterTop(i + a, j + c) == null ? 1 : 0);
+          wq(cWater, [fl[0], fl[1], 0], [x0, yw, z0], [x1, yw, z0], [x1, yw, z1], [x0, yw, z1], bk, cn);
+        }
         else { flat(tri, col, r.b < 0 ? cPit : cLow.clone().lerp(cHigh, Math.max(0, Math.min(1, r.b / top))), y);
           if (r.t === "g") flat(gtri, gcol, gLow.clone().lerp(gHigh, Math.max(0, Math.min(1, r.b / top))), y + .002); }
       }
@@ -568,7 +570,7 @@ function buildChunk(ck) {
   const group = new THREE.Group(), meshes = [];
   if (tri.length) { const g = mk(tri, col, true), m = new THREE.Mesh(g, pitMat); group.add(m, new THREE.LineSegments(new THREE.EdgesGeometry(g, 30), terrainLine)); meshes.push(m); }
   if (gtri.length) { const m = new THREE.Mesh(mk(gtri, gcol, true), grassMat); group.add(m); meshes.push(m); }
-  if (wtri.length) { const g = mk(wtri, wcol, false); g.setAttribute("flow", new THREE.Float32BufferAttribute(wfl, 3)); g.setAttribute("bank", new THREE.Float32BufferAttribute(wbk, 4));
+  if (wtri.length) { const g = mk(wtri, wcol, false); g.setAttribute("flow", new THREE.Float32BufferAttribute(wfl, 3)); g.setAttribute("bank", new THREE.Float32BufferAttribute(wbk, 4)); g.setAttribute("corn", new THREE.Float32BufferAttribute(wcn, 4));
     const m = new THREE.Mesh(g, waterMat); group.add(m); meshes.push(m); }
   terrainGroup.add(group); chunks.set(ck, { group, meshes });
 }
