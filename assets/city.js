@@ -26,6 +26,7 @@ const config = {
   distMin: 4, distMax: 420,                       // 相机到中轴点的距离范围（缩放）
   rotStep: 15,                                    // R 键每次顺时针旋转的角度
   damping: .22,                                   // 旋转缓动（0–1，越大越跟手）
+  recenterNear: 30,                               // 相机距离小于它时视野可移到棋盘任意位置，大于它逐步回中
   wingDepth: .32,                                 // 侧翼伸出的深度（格）
   bridge: { width: .22, height: .16 },            // 连廊截面
   repeatDelay: 300, repeatEvery: 90               // 长按连放 / 连删的节奏（毫秒）
@@ -289,7 +290,10 @@ function clampAngles(o) {
 function clampCam() {
   clampAngles(cam);
   cam.dist = Math.max(config.distMin, Math.min(config.distMax, cam.dist));
-  cam.tx = Math.max(-HALF, Math.min(HALF, cam.tx)); cam.tz = Math.max(-HALF, Math.min(HALF, cam.tz));
+  /* 视野中心可偏离棋盘中心的范围随缩放收紧：拉近时可看到边缘，越拉远越回中，缩到看全棋盘时正好居中 */
+  const full = N * .62 / Math.tan(rad(config.fov) / 2), near = config.recenterNear;
+  const lim = HALF * Math.max(0, Math.min(1, (full - cam.dist) / (full - near)));
+  cam.tx = Math.max(-lim, Math.min(lim, cam.tx)); cam.tz = Math.max(-lim, Math.min(lim, cam.tz));
 }
 function rotateBy(dTheta, dPhi) { goal.theta += dTheta; goal.phi += dPhi; clampAngles(goal); }
 function updateCamera() {
