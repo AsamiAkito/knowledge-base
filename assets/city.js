@@ -390,7 +390,7 @@ function popFloor(i, j) {
   gone.forEach(dropBridge);
   floorsGroup.remove(f.obj); dispose(f.obj);
   if (!st.length) cells.delete(K(i, j)); else refreshSeams(i, j);
-  return { t: f.t, s: f.s, v: f.v, r: f.r, wings: f.wings.map(w => ({ d: w.d, t: w.t, s: w.s, v: w.v })), bridges: gone.map(b => ({ a: b.a, b: b.b })) };
+  return { t: f.t, s: f.s, v: f.v, r: f.r, wings: f.wings.map(w => ({ d: w.d, t: w.t, s: w.s, v: w.v })), bridges: gone.map(b => ({ a: b.a, b: b.b, t: b.t, v: b.v })) };
 }
 /* 侧翼：挂在某层的某个面（d=0..3，楼层本地坐标的 +x +z -x -z），随楼层旋转缩放 */
 function wingObj(parent, d, t, s, v, tag, mat, lmat) {
@@ -428,25 +428,50 @@ function faceToward(i, j, k, toward) {
   const [nx, nz] = FACES[best], tx = -nz, tz = nx, hn = nx ? hx : hz, ht = nx ? hz : hx;
   return [[-1, 0], [1, 0], [1, f.h], [-1, f.h]].map(([s2, y]) => f.obj.localToWorld(new THREE.Vector3(nx * hn + tx * ht * s2, y, nz * hn + tz * ht * s2)));
 }
-function linkGeo(a, b) {
+function linkGeo(a, b, t, v) {
   const ca = floorCenter(...a), cb = floorCenter(...b);
   const A = faceToward(...a, cb), B0 = faceToward(...b, ca); if (!A || !B0) return null;
   /* 两端四角配对：B 的左右与 A 相反时交换，取总距离最短的配法 */
   const sw = [B0[1], B0[0], B0[3], B0[2]], dist = Q => Q.reduce((s2, p, n) => s2 + p.distanceTo(A[n]), 0), B = dist(B0) <= dist(sw) ? B0 : sw;
-  const quads = [[0, 1], [1, 2], [2, 3], [3, 0]], pos = [];
-  quads.forEach(([m, n]) => { [A[m], A[n], B[n], A[m], B[n], B[m]].forEach(p => pos.push(p.x, p.y, p.z)); });
-  const solid = new THREE.BufferGeometry(); solid.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); solid.computeVertexNormals();
-  const L = [];
-  for (let n = 0; n < 4; n++) L.push([A[n].x, A[n].y, A[n].z], [B[n].x, B[n].y, B[n].z]);                 // 四条长边
-  const span = Math.max(A[0].distanceTo(B[0]), .01), cnt = Math.max(1, Math.round(span / .09));             // 两侧立面竖线，延续楼的线稿
-  for (let q = 1; q < cnt; q++) { const t = q / cnt;
-    [[0, 3], [1, 2]].forEach(([lo, hi]) => { const p1 = A[lo].clone().lerp(B[lo], t), p2 = A[hi].clone().lerp(B[hi], t); L.push([p1.x, p1.y, p1.z], [p2.x, p2.y, p2.z]); }); }
-  return { solid, edges: lines(L), panes: null };
+  /* 楼层单元：x 为连接方向，z 为宽度方向，y 为高度。端面（x=±hx）上的面、线、窗格都在楼体里，去掉 */
+  const g = floorGeo(linkType(t), "M", v || 0); if (!g.solid.boundingBox) g.solid.computeBoundingBox();
+  const hx = Math.max(Math.abs(g.solid.boundingBox.min.x), g.solid.boundingBox.max.x), hw = g.w / 2, H = g.h;
+  const len = (A[0].distanceTo(B[0]) + A[1].distanceTo(B[1])) / 2, n = Math.max(1, Math.round(len / g.w));
+  const P = new THREE.Vector3(), Q = new THREE.Vector3();
+  const mapPt = (x, y, z, tile, out) => {                       // 单元坐标 → 两端四边形之间的放样位置
+    const t = (tile + (x + hx) / (2 * hx)) / n, sx = Math.min(1, Math.max(0, (z + hw) / (2 * hw))), sy = Math.min(1, Math.max(0, y / H));
+    const pa = P.copy(A[0]).lerp(A[1], sx).lerp(Q.copy(A[3]).lerp(A[2], sx), sy).clone();
+    const pb = P.copy(B[0]).lerp(B[1], sx).lerp(Q.copy(B[3]).lerp(B[2], sx), sy);
+    return out.copy(pa).lerp(pb, t);
+  };
+  const onEnd = (x, pad) => Math.abs(Math.abs(x) - hx - pad) < 2e-3;
+  const tri = (geo, pad) => {                                     // 三角面：去掉落在端面上的
+    const src = geo.index ? geo.toNonIndexed() : geo, p = src.attributes.position.array, c = src.attributes.color && src.attributes.color.array;
+    const pos = [], col = [], o = new THREE.Vector3();
+    for (let tile = 0; tile < n; tile++) for (let q = 0; q < p.length; q += 9) {
+      if (onEnd(p[q], pad) && onEnd(p[q + 3], pad) && onEnd(p[q + 6], pad)) continue;
+      for (let m = 0; m < 9; m += 3) { mapPt(p[q + m], p[q + m + 1], p[q + m + 2], tile, o); pos.push(o.x, o.y, o.z); if (c) col.push(c[q + m], c[q + m + 1], c[q + m + 2]); }
+    }
+    const out = new THREE.BufferGeometry(); out.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    if (c) out.setAttribute("color", new THREE.Float32BufferAttribute(col, 3)); else out.computeVertexNormals();
+    return out;
+  };
+  const seg = geos => {                                           // 线段：去掉两端都在端面上的
+    const pos = [], o = new THREE.Vector3();
+    geos.filter(Boolean).forEach(geo => { const p = geo.attributes.position.array;
+      for (let tile = 0; tile < n; tile++) for (let q = 0; q < p.length; q += 6) {
+        if (onEnd(p[q], .003) && onEnd(p[q + 3], .003) || onEnd(p[q], 0) && onEnd(p[q + 3], 0)) continue;
+        mapPt(p[q], p[q + 1], p[q + 2], tile, o); pos.push(o.x, o.y, o.z); mapPt(p[q + 3], p[q + 4], p[q + 5], tile, o); pos.push(o.x, o.y, o.z); } });
+    const out = new THREE.BufferGeometry(); out.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); return out;
+  };
+  return { solid: tri(g.solid, 0), edges: seg([g.edges, g.ringTop, g.ringBottom]), panes: g.panes ? tri(g.panes, .005) : null };
 }
-function addBridge(a, b) {
+/* 连接体样式：选中的楼型；封顶层不能当连接，改用光面塔身 */
+function linkType(t) { const d = FLOORS.get(t); return d && !d.cap ? t : "shaft"; }
+function addBridge(a, b, t = "shaft", v = 0) {
   const pa = floorCenter(...a), pb = floorCenter(...b); if (!pa || !pb) return null;
   if (bridges.some(x => (sameF(x.a, a) && sameF(x.b, b)) || (sameF(x.a, b) && sameF(x.b, a)))) return null;
-  const rec = { a: a.slice(), b: b.slice() }, g = linkGeo(a, b); if (!g) return null;
+  t = linkType(t); const rec = { a: a.slice(), b: b.slice(), t, v }, g = linkGeo(a, b, t, v); if (!g) return null;
   rec.obj = meshSet(g, { kind: "bridge", ref: rec });
   bridgeGroup.add(rec.obj); bridges.push(rec); return rec;
 }
@@ -474,20 +499,20 @@ function removeWing(i, j, k, d) {
   const w = detachWing(i, j, k, d); if (!w) return false;
   record({ op: "wing-", i, j, k, w }); changed(); emit("unwing", { i, j, k, d }); return true;
 }
-function connect(a, b) {
+function connect(a, b, t = sel.t) {
   if (a[0] === b[0] && a[1] === b[1]) return false;
-  const r = addBridge(a, b); if (!r) return false;
-  record({ op: "link+", a: r.a, b: r.b }); changed(); emit("link", { a: r.a, b: r.b }); return true;
+  const r = addBridge(a, b, t, Math.floor(Math.random() * 3)); if (!r) return false;
+  record({ op: "link+", a: r.a, b: r.b, t: r.t, v: r.v }); changed(); emit("link", { a: r.a, b: r.b, t: r.t }); return true;
 }
-function disconnect(rec) { dropBridge(rec); record({ op: "link-", a: rec.a, b: rec.b }); changed(); emit("unlink", { a: rec.a, b: rec.b }); return true; }
+function disconnect(rec) { dropBridge(rec); record({ op: "link-", a: rec.a, b: rec.b, t: rec.t, v: rec.v }); changed(); emit("unlink", { a: rec.a, b: rec.b }); return true; }
 function findBridge(a, b) { return bridges.find(x => sameF(x.a, a) && sameF(x.b, b)); }
 function apply(a, inverse) {
   const add = (a.op === "add") !== inverse, wingAdd = (a.op === "wing+") !== inverse, linkAdd = (a.op === "link+") !== inverse;
   if (a.op === "add" || a.op === "del") {
-    if (a.op === "add" ? !inverse : inverse) { addFloor(a.i, a.j, a.f); (a.f.bridges || []).forEach(b => addBridge(b.a, b.b)); }
+    if (a.op === "add" ? !inverse : inverse) { addFloor(a.i, a.j, a.f); (a.f.bridges || []).forEach(b => addBridge(b.a, b.b, b.t, b.v)); }
     else { const g = popFloor(a.i, a.j); if (g && a.op === "add") a.f = g; }
   } else if (a.op === "wing+" || a.op === "wing-") { wingAdd ? attachWing(a.i, a.j, a.k, a.w) : detachWing(a.i, a.j, a.k, a.w.d); }
-  else if (a.op === "link+" || a.op === "link-") { if (linkAdd) addBridge(a.a, a.b); else { const r = findBridge(a.a, a.b); if (r) dropBridge(r); } }
+  else if (a.op === "link+" || a.op === "link-") { if (linkAdd) addBridge(a.a, a.b, a.t, a.v); else { const r = findBridge(a.a, a.b); if (r) dropBridge(r); } }
   return add;
 }
 function undo() { const a = hist.pop(); if (!a) return false; apply(a, true); redoStack.push(a); changed(); emit("undo", a); return true; }
@@ -503,13 +528,13 @@ function exportJSON() {
   const out = [];
   cells.forEach((st, k) => { const [i, j] = k.split(",").map(Number);
     out.push([i, j, st.map(f => [f.t, f.s, f.v, f.r || 0, f.wings.map(w => [w.d, w.t, w.s, w.v])])]); });
-  return { v: 2, cells: out, bridges: bridges.map(b => [...b.a, ...b.b]) };
+  return { v: 2, cells: out, bridges: bridges.map(b => [...b.a, ...b.b, b.t, b.v]) };
 }
 function importJSON(d) {
   clearCity();
   ((d && d.cells) || []).forEach(([i, j, st]) => st.forEach(([t, s, v, r, ws]) => {
     if (FLOORS.has(t) && SIZES[s] && canPlace(i, j)) addFloor(i, j, { t, s, v, r: r || 0, wings: (ws || []).filter(w => FLOORS.has(w[1])).map(([d2, t2, s2, v2]) => ({ d: d2, t: t2, s: s2, v: v2 })) }); }));
-  ((d && d.bridges) || []).forEach(b => addBridge(b.slice(0, 3), b.slice(3, 6)));
+  ((d && d.bridges) || []).forEach(b => addBridge(b.slice(0, 3), b.slice(3, 6), b[6] || "shaft", b[7] || 0));
   hist.length = 0; changed();
 }
 function save() { try { localStorage.setItem(KEY_CITY, JSON.stringify(exportJSON())); } catch (e) { } }
@@ -576,13 +601,18 @@ function updateGhost() {
   }
   req();
 }
+let linkGhost = null;
+function clearLinkGhost() { if (!linkGhost) return; scene.remove(linkGhost); linkGhost.traverse(o => { if (o.geometry) o.geometry.dispose(); }); linkGhost = null; }
 function updateLink() {
-  if (!tAnchor) { linkLine.visible = false; return req(); }
+  if (!tAnchor) { clearLinkGhost(); linkLine.visible = false; return req(); }
   const pa = floorCenter(...tAnchor); if (!pa) { tAnchor = null; linkLine.visible = false; return req(); }
   const b = hoverFloor(), pb = b && !(b[0] === tAnchor[0] && b[1] === tAnchor[1]) ? floorCenter(...b) : null;
+  clearLinkGhost();
   if (!pb) { linkLine.visible = false; return req(); }
-  linkLine.geometry.dispose(); linkLine.geometry = lines([[pa.x, pa.y, pa.z], [pb.x, pb.y, pb.z]]); linkLine.computeLineDistances();
-  linkLine.visible = true; req();
+  const g = linkGeo(tAnchor, b, linkType(sel.t), 0);
+  if (g) { linkGhost = meshSet(g, null, ghostFace, ghostLine); scene.add(linkGhost); linkLine.visible = false; }
+  else { linkLine.geometry.dispose(); linkLine.geometry = lines([[pa.x, pa.y, pa.z], [pb.x, pb.y, pb.z]]); linkLine.computeLineDistances(); linkLine.visible = true; }
+  req();
 }
 
 /* ---------------- 指针：旋转 / 平移 / 缩放 ---------------- */
@@ -679,7 +709,7 @@ function addButton(b) { extraButtons.push(b); renderBar(); }
 function renderBar() {
   if (!bar) return;
   bar.innerHTML = '<div class="cb-group cb-types">' + ORDER.map(id => { const d = FLOORS.get(id);
-      return '<button class="cb-btn' + (sel.t === id ? ' on' : '') + (d.cap ? ' cap' : '') + '" data-t="' + id + '" title="' + d.name + '">' + (d.icon || d.name.slice(0, 1)) + '</button>'; }).join("") + '</div>'
+      return '<button class="cb-btn' + (sel.t === id ? ' on' : '') + (d.cap ? ' cap' : '') + '" data-t="' + id + '" aria-label="' + d.name + '">' + (d.icon || d.name.slice(0, 1)) + '</button>'; }).join("") + '</div>'
     + '<span class="cb-sep"></span><div class="cb-group">' + Object.keys(SIZES).map(s => '<button class="cb-btn cb-size' + (sel.s === s ? ' on' : '') + '" data-s="' + s + '">' + s + '</button>').join("") + '</div>'
     + '<span class="cb-sep"></span><div class="cb-group">'
     + '<button class="cb-btn" data-act="undo" title="撤销 Ctrl+Z">' + UNDO + '</button>'
@@ -732,10 +762,42 @@ function injectCSS() {
   .cb-btn:hover{background:color-mix(in srgb,var(--text) 6%,transparent);color:var(--text)}
   .cb-btn.on{border-color:var(--accent);color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent)}
   .cb-size{width:32px}
+  .cb-pv{position:absolute;width:132px;height:156px;z-index:4;pointer-events:none;background:var(--card);border-radius:var(--r,2px);box-shadow:var(--sh3);
+    opacity:0;transform:translateY(4px);transition:opacity var(--d1,120ms) var(--e-out,ease),transform var(--d1,120ms) var(--e-out,ease)}
+  .cb-pv.show{opacity:1;transform:none}
+  .cb-pv canvas{display:block;width:132px;height:156px}
+  .city-pop.night .cb-pv{background:#1a1c26}
   .city-pop.night .cb-btn{color:#a9adc2}.city-pop.night .cb-btn.on{color:var(--accent)}
   `;
   document.head.appendChild(st);
 }
+/* 楼型预览：单独一个小渲染器；普通层叠 3 层（看得出有没有缝），封顶层放在两层光面塔身上 */
+let tp = null;
+function showTypePreview(btn) {
+  const t = btn.dataset.t, def = FLOORS.get(t); if (!def) return;
+  if (!tp) {
+    const el = document.createElement("div"); el.className = "cb-pv";
+    const r2 = new THREE.WebGLRenderer({ antialias: true, alpha: true }); r2.setPixelRatio(Math.min(devicePixelRatio || 1, 2)); r2.setSize(132, 156);
+    el.appendChild(r2.domElement); pop.querySelector(".city-win").appendChild(el);
+    const sc = new THREE.Scene(), h2 = new THREE.HemisphereLight(), d2 = new THREE.DirectionalLight(); d2.position.copy(sun.position); sc.add(h2, d2);
+    tp = { el, r2, sc, h2, d2, cam: new THREE.PerspectiveCamera(28, 132 / 156, .01, 100), obj: null };
+  }
+  tp.h2.color.copy(hemi.color); tp.h2.groundColor.copy(hemi.groundColor); tp.h2.intensity = hemi.intensity; tp.d2.intensity = sun.intensity;
+  if (tp.obj) tp.sc.remove(tp.obj);
+  const grp = new THREE.Group(), list = def.cap ? ["shaft", "shaft", t] : [t, t, t]; let y = 0;
+  const objs = list.map(id => { const g = floorGeo(id, "M", 1), o = meshSet(g); o.position.y = y; y += g.h; grp.add(o); return { id, o }; });
+  objs.forEach(({ id, o }, k) => { if (!FLOORS.get(id).seamless) return;            // 同 refreshSeams：相同的相邻层不画交界线
+    o.children.forEach(c => { if (c.userData.seam === "top") c.visible = !(objs[k + 1] && objs[k + 1].id === id); if (c.userData.seam === "bottom") c.visible = !(objs[k - 1] && objs[k - 1].id === id); }); });
+  tp.obj = grp; tp.sc.add(grp);
+  const bb = new THREE.Box3().setFromObject(grp), c = bb.getCenter(new THREE.Vector3()), rr = bb.getSize(new THREE.Vector3()).length() / 2;
+  const d = rr / Math.sin(rad(tp.cam.fov) / 2) * 1.05, th = rad(45), ph = rad(24);
+  tp.cam.position.set(c.x + d * Math.cos(ph) * Math.sin(th), c.y + d * Math.sin(ph), c.z + d * Math.cos(ph) * Math.cos(th)); tp.cam.lookAt(c);
+  tp.r2.render(tp.sc, tp.cam);
+  const wr = pop.querySelector(".city-win").getBoundingClientRect(), br = btn.getBoundingClientRect();
+  tp.el.style.left = Math.round(br.left - wr.left + br.width / 2 - 66) + "px"; tp.el.style.top = Math.round(br.top - wr.top - 156 - 10) + "px";
+  tp.el.classList.add("show");
+}
+function hideTypePreview() { if (tp) tp.el.classList.remove("show"); }
 function buildUI() {
   injectCSS();
   corner.classList.add("city-on");
@@ -747,7 +809,9 @@ function buildUI() {
   corner.querySelector(".city-tri").addEventListener("click", e => { e.stopPropagation(); expand(); });
   pop.querySelector(".city-tri").addEventListener("click", e => { e.stopPropagation(); collapse(); });
   pop.addEventListener("mousedown", e => { if (e.target === pop) collapse(); });
-  bar.addEventListener("mousedown", e => { if (e.target.closest(".cb-btn")) e.preventDefault(); });   // 不抢焦点，空格不会触发按钮
+  bar.addEventListener("mousedown", e => { if (e.target.closest(".cb-btn")) e.preventDefault(); });
+  bar.addEventListener("mouseover", e => { const b = e.target.closest(".cb-btn[data-t]"); if (b) showTypePreview(b); });
+  bar.addEventListener("mouseout", e => { const b = e.target.closest(".cb-btn[data-t]"); if (b && !b.contains(e.relatedTarget)) hideTypePreview(); });   // 不抢焦点，空格不会触发按钮
   bar.addEventListener("click", e => {
     const b = e.target.closest(".cb-btn"); if (!b) return;
     if (b.dataset.t) select(b.dataset.t); else if (b.dataset.s) select(null, b.dataset.s);
