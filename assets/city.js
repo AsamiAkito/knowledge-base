@@ -84,33 +84,46 @@ const F = {   // 常用立面图案
   rows: (ys) => (w) => ys.map(y => [-w / 2, y, w / 2, y]),
   hlines: (n) => (w, h) => { const o = []; for (let i = 1; i < n; i++) o.push([-w / 2, h * i / n, w / 2, h * i / n]); return o; },
   diag: (n) => (w, h) => { const o = [], c = w / n; for (let i = 0; i < n; i++) { const u = -w / 2 + i * c; o.push([u, 0, u + c, h], [u + c, 0, u, h]); } return o; },
-  windows: (n, b = .2, t = .78, gap = .5) => (w, h) => { const o = [], span = w * .82, cw = span / n, pw = cw * gap;
-    for (let i = 0; i < n; i++) { const u = -span / 2 + (i + .5) * cw, a = u - pw / 2, c = u + pw / 2, y1 = h * b, y2 = h * t;
-      o.push([a, y1, c, y1], [c, y1, c, y2], [c, y2, a, y2], [a, y2, a, y1]); } return o; },
-  slots: (n, gap = .022) => (w, h) => { const o = [], span = w * .8; for (let i = 0; i < n; i++) { const u = -span / 2 + (i + .5) * span / n; o.push([u - gap, 0, u - gap, h], [u + gap, 0, u + gap, h]); } return o; },
+  /* 标准窗框（与窗户贴图完全一致） */
+  windows: (size = "M", rot = false) => (w, h) => { const [ww, wh] = winDims(size, rot, h), o = [], y1 = h * .2, y2 = y1 + wh;
+    winCenters(w, ww, winStep(size)).forEach(u => { const a = u - ww / 2, c = u + ww / 2; o.push([a, y1, c, y1], [c, y1, c, y2], [c, y2, a, y2], [a, y2, a, y1]); }); return o; },
+  /* 窗与窗之间的竖线（幕墙分格） */
+  mullions: (size = "M", rot = false) => (w, h) => { const ww = winDims(size, rot, h)[0], st = winStep(size), c = winCenters(w, ww, st), o = [];
+    c.slice(1).forEach((u, k) => { const m = (c[k] + u) / 2; o.push([m, 0, m, h]); }); return o; },
+  /* 紧贴每扇窗两侧的竖线（肋条 / 竖条窗） */
+  flank: (size = "M", rot = false, gap = .008) => (w, h) => { const ww = winDims(size, rot, h)[0], o = [];
+    winCenters(w, ww, winStep(size)).forEach(u => { o.push([u - ww / 2 - gap, 0, u - ww / 2 - gap, h], [u + ww / 2 + gap, 0, u + ww / 2 + gap, h]); }); return o; },
+  /* 窗台线与窗顶线（带形窗） */
+  band: (size = "M", rot = false) => (w, h) => { const wh = winDims(size, rot, h)[1]; return [[-w / 2, h * .2, w / 2, h * .2], [-w / 2, h * .2 + wh, w / 2, h * .2 + wh]]; },
   all: (...fns) => (w, h) => fns.flatMap(f => f(w, h))
 };
-/* 方盒四面的窗格（夜里亮灯）：cols 列，rows 为每行中心高度比例 */
-function boxPanes(w, h, { cols, rows = [.5], ph = .6, pr = .55, seed = 1, y0 = 0, lit = .72 } = {}) {
-  const r = rng(seed), pos = [], col = [];
-  cols = cols || Math.max(2, Math.round(w / .17));
-  const span = w * .82, cw = span / cols, pw = cw * pr, half = w / 2 + .005;
+/* 标准窗：只有小 / 中 / 大三种（可竖放），窗台在层高 20% 处；窗中心按 WP 等距排列、整体居中。
+   所有楼层的窗（含夜里的亮灯窗格）和窗户贴图都用这一套，所以任何楼层都能用「实墙层 + 窗户贴图」复刻 */
+const WIN = { S: [.048, .064], M: [.072, .096], L: [.144, .096] }, WP = .12;
+function winDims(s, rot, h) { const [a, b] = WIN[s] || WIN.M; return rot ? [b, Math.min(a, h * .72)] : [a, Math.min(b, h * .72)]; }
+function winCenters(w, ww, step = WP) {                     // 一面墙上窗中心的位置（沿墙方向，墙中心为 0）
+  const n = Math.max(1, Math.floor((w * .86 - ww) / step + 1e-6) + 1), o = [];
+  for (let k = 0; k < n; k++) o.push((k - (n - 1) / 2) * step);
+  return o;
+}
+const winStep = s => s === "L" ? WP * 2 : WP;
+/* 方盒四面的标准窗格（夜里亮灯）：win = { s, rot, step, lit } */
+function boxPanes(w, h, { s: size = "M", rot = false, step, seed = 1, lit = .72, y0 = 0 } = {}) {
+  const r = rng(seed), pos = [], col = [], [ww, wh] = winDims(size, rot, h), half = w / 2 + .005, yb = y0 + h * .2;
   FACES.forEach(([nx, nz]) => { const tx = -nz, tz = nx;
-    for (let c = 0; c < cols; c++) { const u = -span / 2 + (c + .5) * cw;
-      rows.forEach(ry => { const yc = y0 + h * ry, hh = h * ph / 2, hw = pw / 2, cx = nx * half + tx * u, cz = nz * half + tz * u;
-        const P = (s, t) => [cx + tx * hw * s, yc + hh * t, cz + tz * hw * s];
-        const c3 = r() < lit ? [1, .82, .42] : [.05, .06, .085];
-        [P(-1, -1), P(1, -1), P(1, 1), P(-1, -1), P(1, 1), P(-1, 1)].forEach(v => { pos.push(...v); col.push(...c3); }); }); } });
+    winCenters(w, ww, step || winStep(size)).forEach(u => {
+      const P = (a, b) => [nx * half + tx * (u + a * ww / 2), yb + b * wh, nz * half + tz * (u + a * ww / 2)];
+      const c3 = r() < lit ? [1, .82, .42] : [.05, .06, .085];
+      [P(-1, 0), P(1, 0), P(1, 1), P(-1, 0), P(1, 1), P(-1, 1)].forEach(v => { pos.push(...v); col.push(...c3); }); }); });
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
   return g;
 }
-function roundPanes(rad, h, { count = 12, ph = .46, seed = 1, rows = [.5] } = {}) {
-  const r = rng(seed), pos = [], col = [], R = rad + .005, pw = Math.PI * 2 * rad / count * .5;
+function roundPanes(rad, h, { s: size = "M", rot = false, seed = 1, lit = .72 } = {}) {                 // 圆柱面上的标准窗
+  const r = rng(seed), pos = [], col = [], R2 = rad + .005, [ww, wh] = winDims(size, rot, h), count = Math.max(3, Math.floor(Math.PI * 2 * rad * .86 / winStep(size))), yb = h * .2;
   for (let i = 0; i < count; i++) { const a = i / count * Math.PI * 2, nx = Math.cos(a), nz = Math.sin(a), tx = -nz, tz = nx;
-    rows.forEach(ry => { const cx = nx * R, cz = nz * R, yc = h * ry, hh = h * ph / 2, hw = pw / 2;
-      const P = (s, t) => [cx + tx * hw * s, yc + hh * t, cz + tz * hw * s], c3 = r() < .72 ? [1, .82, .42] : [.05, .06, .085];
-      [P(-1, -1), P(1, -1), P(1, 1), P(-1, -1), P(1, 1), P(-1, 1)].forEach(v => { pos.push(...v); col.push(...c3); }); }); }
+    const P = (p, q) => [nx * R2 + tx * p * ww / 2, yb + q * wh, nz * R2 + tz * p * ww / 2], c3 = r() < lit ? [1, .82, .42] : [.05, .06, .085];
+    [P(-1, 0), P(1, 0), P(1, 1), P(-1, 0), P(1, 1), P(-1, 1)].forEach(v => { pos.push(...v); col.push(...c3); }); }
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
   return g;
@@ -165,51 +178,48 @@ const I = p => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strok
 const body = (id, name, icon, lineFn, paneOpt, extra = {}) => registerFloor(Object.assign({ id, name, icon,
   build: ({ w, h, seed }) => ({ solid: box(w, h), lines: lineFn ? facade(w, h, lineFn) : null, panes: paneOpt ? boxPanes(w, h, Object.assign({ seed }, paneOpt(w))) : null }) }, extra));
 body("grid", "网格幕墙", I('<rect x="5" y="4" width="14" height="16"/><path d="M8.5 4v16M12 4v16M15.5 4v16M5 9.3h14M5 14.6h14"/>'),
-  (w, h) => F.cols(Math.max(4, Math.round(w / .09)))(w, h), w => ({ cols: Math.max(4, Math.round(w / .09)), ph: .62, pr: .8 }));
+  F.all(F.mullions("M"), F.band("M")), () => ({ s: "M" }));
 body("vfin", "竖向肋条", I('<rect x="5" y="4" width="14" height="16"/><path d="M7.3 4v16M9.6 4v16M11.9 4v16M14.2 4v16M16.5 4v16"/>'),
-  (w, h) => F.cols(Math.max(6, Math.round(w / .045)))(w, h), w => ({ cols: Math.max(3, Math.round(w / .14)), ph: 1, pr: .5 }), { seamless: true });
+  F.all(F.flank("L", true), F.mullions("L", true)), () => ({ s: "L", rot: true, step: WP }), { seamless: true });
 body("louver", "横向百叶", I('<rect x="5" y="5" width="14" height="14"/><path d="M5 7.5h14M5 10h14M5 12.5h14M5 15h14M5 17.5h14"/>'),
-  F.hlines(3), w => ({ cols: Math.max(2, Math.round(w / .2)), ph: .3, pr: .8 }));
+  F.hlines(3), () => ({ s: "S" }));
 body("ribbon", "带形窗", I('<rect x="5" y="5" width="14" height="14"/><path d="M5 9h14M5 13h14"/><path d="M8 9v4M11 9v4M14 9v4M17 9v4"/>'),
-  (w, h) => F.all(F.rows([h * .25, h * .75]), F.cols(Math.max(3, Math.round(w / .12)), h * .25, h * .75))(w, h), w => ({ cols: Math.max(3, Math.round(w / .12)), ph: .46, pr: .82 }));
+  F.all(F.band("M"), F.windows("M")), () => ({ s: "M" }));
 body("window", "窗户层", I('<rect x="5" y="6" width="14" height="12"/><path d="M7.5 9h3v5h-3zM13.5 9h3v5h-3z"/>'),
-  (w, h) => F.windows(Math.max(2, Math.round(w / .17)), .2, .8)(w, h), w => ({ cols: Math.max(2, Math.round(w / .17)), ph: .58, pr: .5 }));
+  F.windows("M"), () => ({ s: "M" }));
 body("diagrid", "斜交网格", I('<rect x="5" y="4" width="14" height="16"/><path d="M5 4l7 16M12 4 5 20M12 4l7 16M19 4l-7 16"/>'),
-  F.diag(3), w => ({ cols: 3, ph: .4, pr: .45 }));
+  F.diag(3), () => ({ s: "S", step: WP * 2 }));
 body("curtain", "玻璃幕墙", I('<rect x="6" y="5" width="12" height="15"/><path d="M9 5v15M12 5v15M15 5v15M6 12h12"/>'),
-  (w, h) => F.cols(Math.max(5, Math.round(w / .07)))(w, h), w => ({ cols: Math.max(5, Math.round(w / .07)), ph: 1, pr: .78 }), { seamless: true });
+  F.mullions("L", true), () => ({ s: "L", rot: true, step: WP }), { seamless: true });
 body("plain", "实墙层", I('<rect x="5" y="8" width="14" height="10"/>'), null, null);
 body("square", "正方形方格", I('<rect x="4" y="8" width="16" height="5.3"/><path d="M9.3 8v5.3M14.6 8v5.3"/><rect x="4" y="13.3" width="16" height="5.3"/><path d="M9.3 13.3v5.3M14.6 13.3v5.3"/>'),
-  (w, h) => F.cols(Math.max(2, Math.round(w / .16)))(w, h), w => ({ cols: Math.max(2, Math.round(w / .16)), ph: .7, pr: .7 }));
+  F.all(F.mullions("L"), F.windows("L")), () => ({ s: "L" }));
 registerFloor({ id: "cube", name: "小方块", width: 1 / 6, height: 1 / 6, icon: I('<path d="M12 6l6 3.5v7L12 20l-6-3.5v-7z"/><path d="M6 9.5l6 3.5 6-3.5M12 13v7"/>'),
-  build: ({ w, h, seed }) => ({ solid: box(w, h), panes: boxPanes(w, h, { seed, cols: 1, ph: .6, pr: .6 }) }) });
+  build: ({ w, h, seed }) => ({ solid: box(w, h), panes: boxPanes(w, h, { seed, s: "S" }) }) });
 registerFloor({ id: "cubeS", name: "小方块（无缝）", width: 1 / 6, height: 1 / 6, seamless: true, icon: I('<path d="M12 3l5 2.8v12.4L12 21l-5-2.8V5.8z"/><path d="M7 5.8l5 2.8 5-2.8M12 8.6V21"/>'),
-  build: ({ w, h, seed }) => ({ solid: box(w, h), panes: boxPanes(w, h, { seed, cols: 1, ph: 1, pr: .6 }) }) });
-body("shaft", "光面塔身", I('<path d="M7 3v18M17 3v18"/>'), null, w => ({ cols: 2, ph: 1, pr: .25, lit: .5 }), { seamless: true });
+  build: ({ w, h, seed }) => ({ solid: box(w, h), panes: boxPanes(w, h, { seed, s: "S", rot: true }) }) });
+body("shaft", "光面塔身", I('<path d="M7 3v18M17 3v18"/>'), null, () => ({ s: "S", rot: true, step: WP * 2, lit: .5 }), { seamless: true });
 body("slot", "竖条窗", I('<path d="M6 3v18M18 3v18M9 3v18M10 3v18M14 3v18M15 3v18"/>'),
-  (w, h) => F.slots(Math.max(2, Math.round(w / .2)))(w, h), w => ({ cols: Math.max(2, Math.round(w / .2)), ph: 1, pr: .22 }), { seamless: true });
+  F.flank("S", true, .004), () => ({ s: "S", rot: true }), { seamless: true });
 registerFloor({ id: "column", name: "圆柱塔身", seamless: true, icon: I('<path d="M7 3v18M17 3v18M10 3v18M14 3v18"/>'),
   build: ({ w, h, seed }) => {
     const r = w / 2, g = new THREE.CylinderGeometry(r, r, h, 32); g.translate(0, h / 2, 0); const p = [];
     for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; p.push([Math.cos(a) * (r + .002), 0, Math.sin(a) * (r + .002)], [Math.cos(a) * (r + .002), h, Math.sin(a) * (r + .002)]); }
     return { solid: g, lines: lines(p), autoEdges: false, ringTop: lines(ring(r + .002, h)), ringBottom: lines(ring(r + .002, 0)),
-      panes: roundPanes(r, h, { seed, count: 16, ph: 1 }) };
+      panes: roundPanes(r, h, { seed, s: "L", rot: true }) };
   } });
 registerFloor({ id: "podium", name: "裙楼大板", height: .32, icon: I('<rect x="3" y="7" width="18" height="12"/><path d="M3 13h18M9 7v12M15 7v12"/><circle cx="12" cy="10" r="1.6"/>'),
   build: ({ w, h, seed }) => {
-    const L = facade(w, h, F.cols(3));
-    const c = [], r = h * .26, cx = 0, cy = h * .5, z = w / 2 + .004;      // 正面一个圆窗（参考图里的裙楼）
-    for (let i = 0; i < 24; i++) { const a = i / 24 * Math.PI * 2, b = (i + 1) / 24 * Math.PI * 2; c.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r, z], [cx + Math.cos(b) * r, cy + Math.sin(b) * r, z]); }
-    return { solid: box(w, h), lines: merge([L, lines(c)]), panes: boxPanes(w, h, { seed, cols: 3, ph: .7, pr: .8 }) };
+    return { solid: box(w, h), lines: facade(w, h, F.all(F.mullions("L"), F.windows("L"))), panes: boxPanes(w, h, { seed, s: "L" }) };
   } });
 registerFloor({ id: "setback", name: "收分层", icon: I('<rect x="8" y="8" width="8" height="10"/><path d="M5 18h14M10 8v10M12 8v10M14 8v10"/>'),
-  build: ({ w, h, seed }) => { const s = w * .72; return { solid: box(s, h), lines: facade(s, h, F.cols(Math.max(3, Math.round(s / .07)))), panes: boxPanes(s, h, { seed, cols: Math.max(3, Math.round(s / .14)), ph: .7 }) }; } });
+  build: ({ w, h, seed }) => { const s = w * .72; return { solid: box(s, h), lines: facade(s, h, F.mullions("M")), panes: boxPanes(s, h, { seed, s: "M" }) }; } });
 registerFloor({ id: "round", name: "圆形层", icon: I('<ellipse cx="12" cy="7" rx="6" ry="2"/><path d="M6 7v10a6 2 0 0 0 12 0V7"/><path d="M6 11.5a6 2 0 0 0 12 0"/>'),
   build: ({ w, h, seed }) => {
     const r = w / 2, g = new THREE.CylinderGeometry(r, r, h, 32); g.translate(0, h / 2, 0);
     const p = [...ring(r + .002, 0), ...ring(r + .002, h)];
     for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; p.push([Math.cos(a) * (r + .002), 0, Math.sin(a) * (r + .002)], [Math.cos(a) * (r + .002), h, Math.sin(a) * (r + .002)]); }
-    return { solid: g, lines: lines(p), autoEdges: false, panes: roundPanes(r, h, { seed, count: 16, ph: .6 }) };
+    return { solid: g, lines: lines(p), autoEdges: false, panes: roundPanes(r, h, { seed, s: "M" }) };
   } });
 registerFloor({ id: "roofbox", name: "屋顶设备", height: .12, icon: I('<path d="M4 17h16"/><rect x="9" y="12" width="6" height="5"/><path d="M11 12v5M13 12v5"/>'),
   build: ({ w, h }) => ({ solid: merge([box(w * .92, .03), box(w * .34, h - .03, w * .34, .03, w * .15, -w * .12)]) }) });
@@ -661,7 +671,6 @@ function bakeCell(key) {
   bakeGroup.add(grp); baked.set(key, grp); fadeDirty = true;
 }
 /* 贴图几何：在楼层本地坐标的第 d 个面上、沿面位置 u 处，返回 { lines, pane } */
-const WIN = { S: [.048, .064], M: [.072, .096], L: [.144, .096] };       // 窗户宽 × 高（格），中 = 「窗户层」立面上的窗
 const OLD_WIN = { W: "L:0", T: "L:1" };                                     // 旧尺寸 → 新尺寸:旋转
 const isWin = t => t === "window" || /^win:/.test(t || "");
 function winOf(t) {
@@ -669,7 +678,7 @@ function winOf(t) {
   let [s, rot] = OLD_WIN[m[1]] ? OLD_WIN[m[1]].split(":") : [m[1], m[3] || "0"];
   return { s: WIN[s] ? s : "M", lit: m[2] === "1", rot: rot === "1" };
 }
-function winSize(t, h) { const w = winOf(t), [a, b] = WIN[w.s]; return w.rot ? [b, Math.min(a, h * .72)] : [a, Math.min(b, h * .72)]; }
+function winSize(t, h) { const w = winOf(t); return winDims(w.s, w.rot, h); }
 const normDecal = t => { if (!isWin(t)) return t; const w = winOf(t); return "win:" + w.s + ":" + (w.lit ? 1 : 0) + ":" + (w.rot ? 1 : 0); };
 function decalGeo(f, d, u, type) {
   const g = floorGeo(f.t, f.s, f.v); if (!g.solid.boundingBox) g.solid.computeBoundingBox();
@@ -689,7 +698,8 @@ function decalGeo(f, d, u, type) {
 }
 function decalU(f, type, u) {
   const g = floorGeo(f.t, f.s, f.v), lim = Math.max(0, g.w / 2 - (type === "door" ? .06 : winSize(type, 1)[0] / 2 + .01));
-  return Math.max(-lim, Math.min(lim, Math.round((u || 0) / .04) * .04));
+  const st = WP / 2, m = Math.floor(lim / st + 1e-6) * st;                // 吸附到标准窗格（半个窗距）
+  return Math.max(-m, Math.min(m, Math.round((u || 0) / st) * st));
 }
 function decalObj(f, dc, lmat = lineMat, ghostMat) {
   const g = decalGeo(f, dc.d, dc.u, dc.type), grp = new THREE.Group();
@@ -1034,12 +1044,16 @@ function rebuildRoads() {
     nb.forEach((on, q) => {
       if (on) return; const [[ua, va], [ub, vb]] = sides[q], um = (ua + ub) / 2, vm = (va + vb) / 2;
       [[ua, va, um, vm], [um, vm, ub, vb]].forEach(([u0, v0, u1, v1]) => {
-        edge.push(...P(u0, v0), ...P(u1, v1));
-        if (bridge) {                                     // 桥：桥面侧板 + 栏杆
+        edge.push(...P(u0, v0, E + .004), ...P(u1, v1, E + .004));     // 边线略高于路面，斜坡上不会被路面盖住
+        if (bridge) {                                     // 桥：桥面侧板
           quad(P(u0, v0), P(u1, v1), P(u1, v1, -TH), P(u0, v0, -TH)); edge.push(...P(u0, v0, -TH), ...P(u1, v1, -TH));
-          edge.push(...P(u0, v0, .06), ...P(u1, v1, .06)); for (let w = 0; w < 2; w++) { const uu = u0 + (u1 - u0) * w / 2 + (u1 - u0) / 4, vv = v0 + (v1 - v0) * w / 2 + (v1 - v0) / 4; edge.push(...P(uu, vv), ...P(uu, vv, .06)); }
-        } else if (r) {                                   // 斜坡：侧面封到地面
-          const a = P(u0, v0), b = P(u1, v1); if (a[1] - E > ground + 1e-4 || b[1] - E > ground + 1e-4) quad(a, b, [b[0], ground, b[2]], [a[0], ground, a[2]]);
+        } else if (r) {                                   // 斜坡：侧面封到地面，并描出底边与竖边
+          const a = P(u0, v0), b = P(u1, v1);
+          if (a[1] - E > ground + 1e-4 || b[1] - E > ground + 1e-4) {
+            quad(a, b, [b[0], ground, b[2]], [a[0], ground, a[2]]);
+            edge.push(a[0], ground + .004, a[2], b[0], ground + .004, b[2]);
+            [a, b].forEach(p => { if (p[1] - E > ground + 1e-4) edge.push(p[0], ground, p[2], p[0], p[1] + .004, p[2]); });
+          }
         }
       });
     });
@@ -1316,8 +1330,10 @@ function pick(ev) {
   const hit = ray.intersectObjects(pitMesh ? [...hitMeshes, pitMesh] : hitMeshes, false)
     .find(h => { const u = h.object.userData; return !(u && u.i != null && faded.has(K(u.i, u.j))); });
   if (hit && hit.object === pitMesh) {
-    const p = hit.point.clone().addScaledVector(ray.ray.direction, Math.abs(hit.face.normal.y) > .5 ? 0 : .01), i = Math.floor(p.x + HALF), j = Math.floor(p.z + HALF);
-    return inBoard(i, j) ? { kind: "top", i, j, p: hit.point.clone() } : null;
+    const wall = Math.abs(hit.face.normal.y) <= .5;
+    const p = hit.point.clone().addScaledVector(ray.ray.direction, wall ? .01 : 0), i = Math.floor(p.x + HALF), j = Math.floor(p.z + HALF);
+    const q = hit.point.clone().addScaledVector(ray.ray.direction, -.01), front = wall ? [Math.floor(q.x + HALF), Math.floor(q.z + HALF)] : null;   // 墙前（朝向镜头）的那格
+    return inBoard(i, j) ? { kind: "top", i, j, p: hit.point.clone(), front } : null;
   }
   if (hit) {
     const u = hit.object.userData;
@@ -1526,7 +1542,9 @@ addEventListener("keydown", e => {
   if (k === "z") { e.preventDefault(); cycleSize(-1); return; }
   if (k === "c") { e.preventDefault(); cycleSize(1); return; }
   if (k === "r") { e.preventDefault(); if (sel.decal === "window") { sel.wrot = !sel.wrot; select(); } else rotateSel(); return; }
-  if (k === "f") { e.preventDefault(); if (!e.repeat) startHold("f", () => { if (hover && hover.kind === "top" && !stackOf(hover.i, hover.j).length) fill(hover.i, hover.j); }); return; }
+  if (k === "f") { e.preventDefault(); if (!e.repeat) startHold("f", () => { if (!hover || hover.kind !== "top") return;
+      const [a, b] = hover.front && (hover.front[0] !== hover.i || hover.front[1] !== hover.j) ? hover.front : [hover.i, hover.j];
+      if (!stackOf(a, b).length) fill(a, b); }); return; }
 }, true);
 addEventListener("keyup", e => {
   const k = e.key.toLowerCase();
