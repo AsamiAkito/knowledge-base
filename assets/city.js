@@ -235,8 +235,9 @@ registerFloor({ id: "spire", name: "尖顶", cap: true, height: 1.3, icon: I('<p
     const base = box(w * .72, .12), py = new THREE.ConeGeometry(w * .34, 1.0, 4, 1); py.rotateY(Math.PI / 4); py.translate(0, .12 + .5, 0);
     return { solid: merge([base, py]), lines: lines([[0, 1.12, 0], [0, 1.6, 0]]) };
   } });
-/* 天线：一根竖线（细到看不出粗细的实体只用来拾取），夜里不发光 */
-registerFloor({ id: "pole", name: "天线", cap: true, height: .8, icon: I('<path d="M12 3v18"/>'),
+/* 天线：一根竖线（细到看不出粗细的实体只用来拾取），夜里不发光。
+   和小方块一样可在格内自由摆放，自动落在下方最高处：地面、楼顶（含穹顶等封顶层）、小方块顶上 */
+registerFloor({ id: "pole", name: "天线", cap: true, width: .012, height: .8, icon: I('<path d="M12 3v18"/>'),
   build: ({ h }) => ({ solid: box(.012, h, .012), lines: lines([[0, 0, 0], [0, h, 0]]), autoEdges: false }) });
 registerFloor({ id: "antenna", name: "避雷针", cap: true, hidden: true, height: .3, icon: I('<path d="M12 3v9M10 6h4"/><rect x="9" y="12" width="6" height="4"/><path d="M5 20h14v-4H5z"/>'),
   build: ({ w }) => ({ solid: merge([box(w * .92, .08), box(w * .34, .22, w * .34, .08)]),
@@ -936,9 +937,11 @@ function groundUnder(x, z) {                              // 该点下方：地�
     if (Math.abs(x - cx) < hw && Math.abs(z - cz) < hw) y = stackTop(i, j); }
   return y;
 }
+/* 细长的（天线）吸附到 1/12 格：既能对准小方块中心，也能对准格子正中（穹顶顶点） */
+const snapFor = t => floorGeo(t, "M", 0).w < .05 ? v => Math.round(v * SUB * 2) / (SUB * 2) : bsnap;
 function blockTarget(x, z, t, yFix) {                    // 方块落点；被占用或出界返回 null
-  const w = floorGeo(t, "M", 0).w, h = floorGeo(t, "M", 0).h, lim = HALF - w / 2;
-  x = Math.max(-lim, Math.min(lim, bsnap(x))); z = Math.max(-lim, Math.min(lim, bsnap(z)));
+  const w = floorGeo(t, "M", 0).w, h = floorGeo(t, "M", 0).h, lim = HALF - w / 2, sn = snapFor(t);
+  x = Math.max(-lim, Math.min(lim, sn(x))); z = Math.max(-lim, Math.min(lim, sn(z)));
   let y = yFix;
   if (y == null) { y = groundUnder(x, z); if (y == null) return null; blocks.forEach(b => { if (overlapXZ(b, x, z, w)) y = Math.max(y, b.y + bgeo(b).h); }); }
   if (blocks.some(b => overlapXZ(b, x, z, w) && b.y < y + h - 1e-4 && b.y + bgeo(b).h > y + 1e-4)) return null;
