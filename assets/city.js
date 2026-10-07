@@ -3,13 +3,13 @@
    ------------------------------------------------------------
    · 线稿砖块风格：白天白立面 + 细线立面图案；夜里（网页暗色主题）窗格亮灯
    · 190×190 棋盘，透视相机（近大远小）
-   · 视角：左键拖动绕「按下时鼠标所指的点」旋转 / 改俯仰（拖动时显示中轴），
-     滚轮缩放；展开后右键或 Shift+拖动平移、滚轮朝鼠标位置缩放
-   · 右下角只能旋转和缩放；点左上角三角展开后才能编辑：
+   · 视角：左键拖动平移；右键（或 Shift+左键）拖动绕「按下时鼠标所指的点」旋转 / 改俯仰（拖动时显示中轴）；
+     滚轮缩放（展开后朝鼠标位置）
+   · 右下角只能平移、旋转和缩放；点左上角三角展开后才能编辑：
        左键单击 / 空格   指着顶面 / 地面 → 往上盖一层；指着某层侧面 → 在该面加侧翼（空格长按连放）
        右键单击 / X       删掉指着的方块 / 侧翼 / 连接，否则删该格最上一层；空格子则把地面降低一层（最多地下三层）；X 长按连删
        贴图：街道铺在空地格上（自动连路、画路缘与中线），窗户 / 门贴在楼层侧面所指位置；右键或 X 移除
-       左键拖动旋转，右键或 Shift+拖动平移；W A S D 按屏幕方向平移
+       左键拖动平移，右键拖动旋转（Shift+左键也可）；W A S D 按屏幕方向平移
        选中小方块（固定 0.16）时可在格子里任意位置摆放：指地面 / 楼顶放在所指位置，指方块顶面叠上去，指方块侧面紧贴一块
        F      空格子把地面升高一层（坑先填平，最高 12 层；相邻同高的地块连成一体，中间不画缝线）
        选中地标后按空格：在指着的格子放下整栋地标（一次撤销整栋撤掉）
@@ -499,7 +499,10 @@ function clampAngles(o) {
 function clampCam() {
   clampAngles(cam);
   cam.dist = Math.max(config.distMin, Math.min(config.distMax, cam.dist));
-  /* 视野中心可偏离棋盘中心的范围随缩放收紧：拉近时可看到边缘，越拉远越回中，缩到看全棋盘时正好居中 */
+  cam.tx = Math.max(-HALF, Math.min(HALF, cam.tx)); cam.tz = Math.max(-HALF, Math.min(HALF, cam.tz));
+}
+/* 往外缩时回中：越拉远，视野中心允许偏离棋盘中心的范围越小，缩到看全棋盘时正好居中（平移本身不受限） */
+function recenterOnZoomOut() {
   const full = N * .62 / Math.tan(rad(config.fov) / 2), near = config.recenterNear;
   const lim = HALF * Math.max(0, Math.min(1, (full - cam.dist) / (full - near)));
   cam.tx = Math.max(-lim, Math.min(lim, cam.tx)); cam.tz = Math.max(-lim, Math.min(lim, cam.tz));
@@ -1121,7 +1124,7 @@ function bindPointer(cv) {
   cv.addEventListener("pointerleave", () => { if (!drag) setHover(null); });
   cv.addEventListener("pointerdown", e => {
     e.stopPropagation();
-    const pan = expanded && (e.button === 2 || e.button === 1 || e.shiftKey);
+    const pan = e.button === 0 && !e.shiftKey;                 // 左键拖动平移（右下角也可以）；右键 / 中键 / Shift+左键拖动旋转
     drag = { lx: e.clientX, ly: e.clientY, sx: e.clientX, sy: e.clientY, btn: e.button, moved: 0, pan, g: pan ? groundAt(e) : null };
     if (!pan) {
       /* 按在楼上：中轴取这栋楼的中心（楼原地转）；按在地面或连廊：取按下的点 */
@@ -1147,8 +1150,8 @@ function bindPointer(cv) {
   cv.addEventListener("pointerup", end); cv.addEventListener("pointercancel", end);
   cv.addEventListener("wheel", e => {
     e.preventDefault(); e.stopPropagation();
-    const before = expanded ? groundAt(e) : null;
-    cam.dist *= Math.pow(1.0018, e.deltaY); updateCamera();
+    const before = expanded && e.deltaY < 0 ? groundAt(e) : null;        // 放大朝鼠标位置；缩小朝画面中心并逐步回中
+    cam.dist *= Math.pow(1.0018, e.deltaY); if (e.deltaY > 0) recenterOnZoomOut(); updateCamera();
     const after = before ? groundAt(e) : null;
     if (before && after) { cam.tx += before.x - after.x; cam.tz += before.z - after.z; updateCamera(); }
     hov(e);
