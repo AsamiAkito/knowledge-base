@@ -334,7 +334,7 @@ registerTemplate({ id: "random", name: "随机城市楼", icon: IT('<rect x="5" 
 /* ---------------- 配色：白天 / 夜晚两套，按城里的时间在两者之间渐变 ---------------- */
 function palette(night) {
   if (night) return { tLine: 0x596080, tLow: 0x1d2030, tHigh: 0x343a52, tWall: 0x151722, tPit: 0x171925, gLow: 0x1e2e24, gHigh: 0x2f4a35, water: 0x1b3045, waterFall: 0x24405a, road: 0x272a37, face: 0x22252f, line: 0x7d84a0, ground: 0x1d2030, side: 0x181a26, side2: 0x151721, minor: 0x272b3c, major: 0x333850, sky: 0x9aa0c0, gnd: 0x1a1c28, ambient: 1.6, sun: .6, clear: 0x13141b };
-  return { tLine: 0x9a9cad, tLow: 0xeef0f3, tHigh: 0xb0b3c3, tWall: 0xcfd0dc, tPit: 0xe4e4ec, gLow: 0xd9e8cb, gHigh: 0x9fbb8a, water: 0xcfe3ef, waterFall: 0xb7d2e4, road: 0xe2e2e8, face: 0xffffff, line: 0x1c1d24, ground: 0xeceef1, side: 0xe4e4ec, side2: 0xd8d8e2, minor: 0xe2e3ea, major: 0xd0d0dc, sky: 0xffffff, gnd: 0xdedeea, ambient: 3.4, sun: .75, clear: 0xf6f6f4 };
+  return { tLine: 0x9a9cad, tLow: 0xeef0f3, tHigh: 0xb0b3c3, tWall: 0xcfd0dc, tPit: 0xe4e4ec, gLow: 0xd9e8cb, gHigh: 0x9fbb8a, water: 0xa6c9df, waterFall: 0x8db4cd, road: 0xe2e2e8, face: 0xffffff, line: 0x1c1d24, ground: 0xeceef1, side: 0xe4e4ec, side2: 0xd8d8e2, minor: 0xe2e3ea, major: 0xd0d0dc, sky: 0xffffff, gnd: 0xdedeea, ambient: 3.4, sun: .75, clear: 0xf6f6f4 };
 }
 
 function blendPalette(t) {
@@ -713,7 +713,11 @@ function meshSet(g, tag, mat = faceMat, lmat = lineMat) {
   if (g.panes && mat === faceMat) { const pm = new THREE.Mesh(g.panes, paneMat); pm.userData.pane = true; pm.visible = night; grp.add(pm); }
   return grp;
 }
-function dispose(obj) { obj.traverse(o => { const k = hitMeshes.indexOf(o); if (k >= 0) hitMeshes.splice(k, 1); }); if (hiObj && !hiObj.parent) hiObj = null; }
+function dispose(obj) {
+  obj.traverse(o => { const k = hitMeshes.indexOf(o); if (k >= 0) hitMeshes.splice(k, 1); });
+  let x = hiObj; while (x && x !== scene) x = x.parent;                    // 正被高亮的对象已不在场景里：红框一起去掉
+  if (hiObj && x !== scene) highlight(null);
+}
 function orient(obj, w, r, z = 1) {                   // z：这一层的缩放（≤1），斜放时再按比例缩小保证不出格
   const a = rad(r || 0), k = Math.min(1, .96 / (w * z * (Math.abs(Math.cos(a)) + Math.abs(Math.sin(a)))));
   obj.rotation.y = -a; obj.scale.set(k * z, 1, k * z);
@@ -1570,7 +1574,7 @@ function updateGhost() {
         f.obj.updateMatrixWorld(true); f.obj.matrixWorld.decompose(ghost.position, ghost.quaternion, ghost.scale); ghost.visible = true; } }
     return req();
   }
-  if (blockMode() && hover.kind !== "side") {                       // 方块模式：预览落点
+  if (blockMode() && (hover.kind !== "side" || thinSel())) {                       // 方块模式：预览落点
     const p = blockAim(); if (p) { ghost.add(meshSet(floorGeo(sel.t, "M", 0), null, ghostFace, ghostLine)); ghost.position.set(p.x, p.y, p.z); ghost.visible = true; }
     return req();
   }
@@ -1597,8 +1601,10 @@ function updateGhost() {
 let linkGhost = null;
 function clearLinkGhost() { if (!linkGhost) return; scene.remove(linkGhost); linkGhost.traverse(o => { if (o.geometry) o.geometry.dispose(); }); linkGhost = null; }
 /* 方块模式下当前所指的落点 */
+const thinSel = () => blockMode() && floorGeo(sel.t, "M", 0).w < .05;
 function blockAim() {
   if (!hover) return null;
+  if (thinSel() && hover.k != null && hover.i != null) return blockTarget(hover.i - HALF + .5, hover.j - HALF + .5, sel.t);
   if (hover.kind === "block") { const b = hover.ref, [nx, ny, nz] = hover.n || [0, 1, 0], w = bgeo(b).w;
     if (ny > 0) return blockTarget(b.x, b.z, sel.t);
     if (ny < 0) return null;
@@ -1694,7 +1700,7 @@ function doPlace() {
       else addDecal(hover.i, hover.j, hover.k, hover.d, hover.u, decalType()); }
     return;
   }
-  if (blockMode() && hover.kind !== "side") { const p = blockAim(); if (p) placeBlock(p.x, p.z, sel.t, hover.kind === "block" && !(hover.n && hover.n[1] > 0) ? p.y : undefined); return; }
+  if (blockMode() && (hover.kind !== "side" || thinSel())) { const p = blockAim(); if (p) placeBlock(p.x, p.z, sel.t, hover.kind === "block" && !(hover.n && hover.n[1] > 0) ? p.y : undefined); return; }
   if (hover.kind === "block") { const i = Math.floor(hover.ref.x + HALF), j = Math.floor(hover.ref.z + HALF); if (sel.tpl) placeTemplate(i, j, sel.tpl); else place(i, j); return; }   // 小方块上盖楼
   if (hover.kind === "side") addWing(hover.i, hover.j, hover.k, hover.d, sel.t, sel.s, undefined, hover.u);
   else if (hover.kind === "top") { if (sel.tpl) placeTemplate(hover.i, hover.j, sel.tpl); else place(hover.i, hover.j); }
