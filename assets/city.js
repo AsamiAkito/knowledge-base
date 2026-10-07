@@ -330,6 +330,7 @@ const cells = new Map(), bridges = [], terrain = new Map();   // terrain: "i,j" 
 const hist = [], redoStack = [];
 let sel = Object.assign({ t: "grid", s: "M", r: 0 }, (() => { try { return JSON.parse(localStorage.getItem(KEY_SEL)) || {}; } catch (e) { return {}; } })());
 if (!FLOORS.has(sel.t)) sel.t = "grid";
+sel.view = true; sel.tpl = null; sel.decal = null;                // 打开时默认观赏模式（鼠标按钮）
 const paneLight = { value: 0 }; let paneVis = null;
 let night = false, hover = null, expanded = false, tAnchor = null, drag = null;
 
@@ -416,7 +417,8 @@ function initThree() {
       if (mx || mz) { cam.tx += mx * sp; cam.tz += mz * sp; orbit = null; updateCamera(); }
     }
     if (now - (loop.ck || 0) > 500) { loop.ck = now; updateClock(); }
-    if (host && !document.hidden && (expanded || cityVisible) && now - carLast >= (expanded ? 0 : 50)) { stepCars(Math.min(.1, (now - carLast) / 1000)); carLast = now; }
+    /* 编辑模式车辆停住，只在操作时重绘 */
+    if (host && !document.hidden && (expanded ? sel.view : cityVisible) && now - carLast >= (expanded ? 0 : 50)) { stepCars(Math.min(.1, (now - carLast) / 1000)); carLast = now; }
     if (dirtyCells.size) { dirtyCells.forEach(bakeCell); dirtyCells.clear(); }
     if (fadeDirty) { fadeDirty = false; updateFade(); }
     if (!needs || !host) return; needs = false; fadeGrid(); renderer.render(scene, camera); emit("render");
@@ -663,7 +665,7 @@ function decalGeo(f, d, u, type) {
     rect(u - pw / 2, u + pw / 2, y0, y1, true); rect(u - pw / 2 + .015, u + pw / 2 - .015, y0 + .015, y1 - .015, true);
     L.push(P(u + pw / 2 - .03, y1 * .5), P(u + pw / 2 - .03, y1 * .5 + .02)); }
   else { pw = .12; y0 = h * .18; y1 = h * .82;
-    rect(u - pw / 2, u + pw / 2, y0, y1); L.push(P(u, y0), P(u, y1), P(u - pw / 2, y0 + (y1 - y0) * .62), P(u + pw / 2, y0 + (y1 - y0) * .62)); }
+    rect(u - pw / 2, u + pw / 2, y0, y1); }
   const q = [P(u - pw / 2, y0), P(u + pw / 2, y0), P(u + pw / 2, y1), P(u - pw / 2, y0), P(u + pw / 2, y1), P(u - pw / 2, y1)], c3 = type === "door" ? [.85, .62, .32] : [1, .82, .42];
   const pos = [], col = []; q.forEach(v => { pos.push(...v); col.push(...c3); });
   const pg = new THREE.BufferGeometry(); pg.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); pg.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
@@ -1117,6 +1119,23 @@ function setWorld(w) {
   w.terrain.forEach(([i, j, h]) => { if (h) terrain.set(K(i, j), h); }); w.water.forEach(k => water.add(k)); w.grass.forEach(k => grass.add(k));
   rebuildTerrain(); if (roadMesh) rebuildRoads();
 }
+function addWater(i, j) {
+  const k = K(i, j);
+  if (!inBoard(i, j) || water.has(k) || stackOf(i, j).length || roads.has(k)) { emit("blocked", { i, j }); return false; }
+  const dh = levelOf(i, j) > -config.digMax ? 1 : 0;                 // 水面比地面低一点：河床下沉一层
+  setWaterCell(i, j, true, dh); record({ op: "water+", i, j, dh }); changed(); emit("water", { i, j }); return true;
+}
+function removeWater(i, j) {
+  if (!water.has(K(i, j))) return false;
+  const dh = levelOf(i, j) < config.raiseMax ? 1 : 0;
+  setWaterCell(i, j, false, dh); record({ op: "water-", i, j, dh }); changed(); emit("unwater", { i, j }); return true;
+}
+function setWaterCell(i, j, on, dh) {
+  const k = K(i, j), h = levelOf(i, j) + (on ? -dh : dh);
+  if (on) water.add(k); else water.delete(k);
+  if (h) terrain.set(k, h); else terrain.delete(k);
+  rebuildTerrain(); if (roads.size) rebuildRoads();
+}
 function addGrass(i, j) { if (!inBoard(i, j) || grass.has(K(i, j)) || water.has(K(i, j))) return false; grass.add(K(i, j)); rebuildTerrain(); record({ op: "grass+", i, j }); changed(); return true; }
 function removeGrass(i, j) { if (!grass.delete(K(i, j))) return false; rebuildTerrain(); record({ op: "grass-", i, j }); changed(); return true; }
 function terrainSnapshot() { return [...terrain].map(([k, h]) => [...k.split(",").map(Number), h]); }
@@ -1141,6 +1160,7 @@ function apply(a, inverse) {
     else { const g = popFloor(a.i, a.j); if (g && a.op === "add") a.f = g; }
   } else if (a.op === "wing+" || a.op === "wing-") { wingAdd ? attachWing(a.i, a.j, a.k, a.w) : detachWing(a.i, a.j, a.k, a.w.d, a.w.u || 0); }
   else if (a.op === "dig" || a.op === "fill") { setLevel(a.i, a.j, levelOf(a.i, a.j) + ((a.op === "dig") !== inverse ? -1 : 1)); }
+  else if (a.op === "water+" || a.op === "water-") { setWaterCell(a.i, a.j, (a.op === "water+") !== inverse, a.dh); }
   else if (a.op === "grass+" || a.op === "grass-") { if ((a.op === "grass+") !== inverse) grass.add(K(a.i, a.j)); else grass.delete(K(a.i, a.j)); rebuildTerrain(); }
   else if (a.op === "road+" || a.op === "road-") { if ((a.op === "road+") !== inverse) roads.add(K(a.i, a.j)); else roads.delete(K(a.i, a.j)); rebuildRoads(); }
   else if (a.op === "decal+" || a.op === "decal-") { if ((a.op === "decal+") !== inverse) attachDecal(a.i, a.j, a.k, a.dc); else detachDecal(a.i, a.j, a.k, a.dc.d, a.dc.type, a.dc.u); }
@@ -1274,7 +1294,8 @@ function updateGhost() {
   if (hover.kind === "bridge") { highlight(hover.ref.obj); return req(); }
   if (hover.kind === "wing") { const f = stackOf(hover.i, hover.j)[hover.k], w = f && f.wings.find(x => x.d === hover.d && Math.abs((x.u || 0) - hover.u) < 1e-6); if (w) highlight(w.obj); return req(); }
   if (sel.decal) {                                                  // 贴图模式
-    if (sel.decal === "street" || sel.decal === "grass") { if (hover.kind === "top" && hover.i != null) { const k = K(hover.i, hover.j), ok = sel.decal === "grass" ? !grass.has(k) && !water.has(k) : !roads.has(k) && !stackOf(hover.i, hover.j).length;
+    if (sel.decal === "street" || sel.decal === "grass" || sel.decal === "water") { if (hover.kind === "top" && hover.i != null) { const k = K(hover.i, hover.j),
+        ok = sel.decal === "grass" ? !grass.has(k) && !water.has(k) : sel.decal === "water" ? !water.has(k) && !roads.has(k) && !stackOf(hover.i, hover.j).length : !roads.has(k) && !stackOf(hover.i, hover.j).length;
       hoverBox.position.set(hover.i - HALF + .5, stackTop(hover.i, hover.j) + .006, hover.j - HALF + .5); hoverBox.material.color.set(ok ? accent() : "#c0344d"); hoverBox.visible = true; } }
     else if (hover.kind === "side") { const f = stackOf(hover.i, hover.j)[hover.k];
       if (f) { ghost.add(decalObj(f, { d: hover.d, u: decalU(f, sel.decal, hover.u), type: sel.decal }, ghostLine, true));
@@ -1358,7 +1379,7 @@ function bindPointer(cv) {
     hov(e);
   });
   const end = e => { if (!drag) return; const d0 = drag; drag = null; pivot.visible = false;
-    if (expanded && !sel.view && e.type === "pointerup" && d0.moved < 5) { if (d0.btn === 0) doPlace(); else if (d0.btn === 2) doDelete(); } req(); cv.classList.remove("grabbing"); try { cv.releasePointerCapture(e.pointerId); } catch (_) { } hov(e); };
+    if (expanded && !sel.view && e.type === "pointerup" && d0.moved < 5) { if (d0.btn === 0) doPlace(); } req(); cv.classList.remove("grabbing"); try { cv.releasePointerCapture(e.pointerId); } catch (_) { } hov(e); };
   cv.addEventListener("pointerup", end); cv.addEventListener("pointercancel", end);
   cv.addEventListener("wheel", e => {
     e.preventDefault(); e.stopPropagation();
@@ -1400,6 +1421,7 @@ function doPlace() {
   if (sel.decal) {
     if (sel.decal === "street") { if (hover.kind === "top" && hover.i != null) addRoad(hover.i, hover.j); }
     else if (sel.decal === "grass") { if (hover.kind === "top" && hover.i != null) addGrass(hover.i, hover.j); }
+    else if (sel.decal === "water") { if (hover.kind === "top" && hover.i != null) addWater(hover.i, hover.j); }
     else if (hover.kind === "side") addDecal(hover.i, hover.j, hover.k, hover.d, hover.u, sel.decal);
     return;
   }
@@ -1411,6 +1433,7 @@ function doDelete() {
   if (!hover) return;
   if (sel.decal === "street" && hover.kind === "top" && roads.has(K(hover.i, hover.j))) { removeRoad(hover.i, hover.j); return; }
   if (sel.decal === "grass" && hover.kind === "top" && grass.has(K(hover.i, hover.j))) { removeGrass(hover.i, hover.j); return; }
+  if (hover.kind === "top" && hover.i != null && water.has(K(hover.i, hover.j)) && !stackOf(hover.i, hover.j).length && (sel.decal === "water" || !roads.has(K(hover.i, hover.j)))) { removeWater(hover.i, hover.j); return; }
   if ((sel.decal === "window" || sel.decal === "door") && hover.kind === "side" && removeDecal(hover.i, hover.j, hover.k, hover.d, hover.u, sel.decal)) return;
   if (hover.kind === "top" && hover.i != null && roads.has(K(hover.i, hover.j)) && !stackOf(hover.i, hover.j).length) { removeRoad(hover.i, hover.j); return; }
   if (hover.kind === "bridge") { if (bridges.includes(hover.ref)) disconnect(hover.ref); return; }
@@ -1514,6 +1537,7 @@ const DECALS = [
   ["street", "街道", DI('<path d="M7 3 4 21M17 3l3 18"/><path d="M12 4v3M12 10.5v3M12 17v3"/>')],
   ["window", "窗户贴图", DI('<rect x="7" y="5" width="10" height="14"/><path d="M12 5v14M7 13.5h10"/>')],
   ["door", "门贴图", DI('<path d="M7 21V4h10v17M4 21h16"/><path d="M14.5 12.5v1.5"/>')],
+  ["water", "水", DI('<path d="M3 9c2-1.6 4-1.6 6 0s4 1.6 6 0 4-1.6 6 0M3 14c2-1.6 4-1.6 6 0s4 1.6 6 0 4-1.6 6 0M3 19c2-1.6 4-1.6 6 0s4 1.6 6 0 4-1.6 6 0"/>')],
   ["grass", "草地", DI('<path d="M3 20h18"/><path d="M6 20c0-3 1-5 2-7M9 20c0-4 .5-6 1.5-9M13 20c0-3 1.5-6 3-8M17 20c0-2 .5-4 2-5"/>')]];
 const extraButtons = [];
 function addButton(b) { extraButtons.push(b); renderBar(); }
@@ -1539,7 +1563,7 @@ function select(t, s, r) {
   renderBar(); updateGhost(); emit("select", Object.assign({}, sel));
 }
 function mount(target) { host = target; host.appendChild(renderer.domElement); resize(); applyPalette(); }
-function expand() { if (expanded) return; expanded = true; pop.classList.add("show"); mount(popStage); emit("expand"); }
+function expand() { if (expanded) return; expanded = true; if (!sel.view) setView(true); pop.classList.add("show"); mount(popStage); emit("expand"); }
 /* 全览：窗口铺满屏幕（能全屏就全屏），按钮全部隐藏，快捷键照常；Esc 退出 */
 let pure = false;
 function setPure(on) {
@@ -1656,7 +1680,7 @@ function buildUI() {
     if (b.dataset.t) select(b.dataset.t); else if (b.dataset.s) select(null, b.dataset.s);
     else if (b.dataset.tpl) { sel.tpl = sel.tpl === b.dataset.tpl ? null : b.dataset.tpl; sel.decal = null; sel.view = false; select(); }
     else if (b.dataset.decal) { sel.decal = sel.decal === b.dataset.decal ? null : b.dataset.decal; sel.tpl = null; sel.view = false; select(); }
-    else if (b.dataset.act === "view") setView(!sel.view); else if (b.dataset.act === "pure") setPure(true);
+    else if (b.dataset.act === "view") setView(true); else if (b.dataset.act === "pure") setPure(true);
     else if (b.dataset.act === "undo") undo(); else if (b.dataset.act === "redo") redo();
     else if (b.dataset.x != null) { const x = extraButtons[+b.dataset.x]; if (x && x.onClick) x.onClick(api); }
   });
@@ -1738,7 +1762,7 @@ function publishJSON() { stamp = Date.now(); save(); return JSON.stringify(expor
    CityGame.three / scene / camera / renderer / cells / bridges / config / sizes / helpers */
 const api = {
   registerFloor, registerTemplate, placeTemplate, addButton, on, off, place, remove, addWing, removeWing, connect, dig, fill,
-  addRoad, removeRoad, addGrass, removeGrass, genWorld, setWorld, addDecal, removeDecal, raise: fill, lower: dig, randomTerrain, genTerrain, group, placeBlock, removeBlock, mergeNeighbor, seedCity, undo, redo, clear: clearCity,
+  addRoad, removeRoad, addGrass, removeGrass, addWater, removeWater, genWorld, setWorld, addDecal, removeDecal, raise: fill, lower: dig, randomTerrain, genTerrain, group, placeBlock, removeBlock, mergeNeighbor, seedCity, undo, redo, clear: clearCity,
   select, expand, collapse, rotateBy, exportJSON, importJSON, publishJSON, migrateWorld, addSpurs, setPure, setView, config,
   jumpTo, tickCars: dt => stepCars(dt),
   setHour(h) { hourFix = h == null ? null : ((+h % 24) + 24) % 24; updateClock(true); },
