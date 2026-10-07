@@ -871,33 +871,36 @@ function popFloor(i, j) {
   gone.forEach(dropBridge);
   floorsGroup.remove(f.obj); dispose(f.obj);
   if (!st.length) { cells.delete(K(i, j)); markDirty(i, j); } else refreshSeams(i, j);
-  return { t: f.t, s: f.s, v: f.v, r: f.r, z: f.z, win: f.win, wings: f.wings.map(w => ({ d: w.d, t: w.t, s: w.s, v: w.v, u: w.u })), decals: f.decals.map(x => ({ d: x.d, u: x.u, type: x.type })), bridges: gone.map(b => ({ a: b.a, b: b.b, t: b.t, v: b.v })) };
+  return { t: f.t, s: f.s, v: f.v, r: f.r, z: f.z, win: f.win, wings: f.wings.map(w => ({ d: w.d, t: w.t, s: w.s, v: w.v, u: w.u, lv: w.lv || 0 })), decals: f.decals.map(x => ({ d: x.d, u: x.u, type: x.type })), bridges: gone.map(b => ({ a: b.a, b: b.b, t: b.t, v: b.v })) };
 }
 /* 侧翼：挂在某层的某个面（d=0..3，楼层本地坐标的 +x +z -x -z），随楼层旋转缩放 */
-function wingU(parent, t, s, u) {                     // 固定尺寸侧翼沿面方向的位置（吸附、不出面）；其它侧翼居中
-  if (!FLOORS.get(t) || !FLOORS.get(t).width) return 0;
-  const lim = Math.max(0, floorGeo(parent.t, parent.s, parent.v).w / 2 - floorGeo(t, s, 0).w / 2);
-  return Math.max(-lim, Math.min(lim, Math.round((u || 0) * SUB) / SUB));
+/* 侧翼沿面方向的宽度：小方块按原尺寸，其它楼型按所选大小的八成（不超过这一面） */
+function wingW(parent, t, s) { const g = floorGeo(t, s, 0), pw = floorGeo(parent.t, parent.s, parent.v).w; return FLOORS.get(t).width ? g.w : Math.min(g.w * .8, pw); }
+function wingU(parent, t, s, u) {                     // 侧翼沿面方向的位置：跟着鼠标，吸附 1/6 格，不出面
+  if (!FLOORS.get(t)) return 0;
+  const lim = Math.max(0, floorGeo(parent.t, parent.s, parent.v).w / 2 - wingW(parent, t, s) / 2);
+  const q = (u || 0) * SUB, r = Math.sign(q) * Math.round(Math.abs(q)) / SUB;          // 左右对称地取整，贴边的位置撤销 / 读档后不漂移
+  return Math.max(-lim, Math.min(lim, r));
 }
-function wingObj(parent, d, t, s, v, tag, mat, lmat, u = 0) {
-  const g = floorGeo(t, s, v), pw = floorGeo(parent.t, parent.s, parent.v).w, ww = Math.min(g.w * .8, pw), depth = config.wingDepth;
+function wingObj(parent, d, t, s, v, tag, mat, lmat, u = 0, lv = 0) {      // lv：叠在第几层（0 = 贴着楼层本身）
+  const g = floorGeo(t, s, v), pw = floorGeo(parent.t, parent.s, parent.v).w, ww = wingW(parent, t, s), depth = config.wingDepth;
   const outer = new THREE.Group(), inner = meshSet(g, tag, mat, lmat);
   outer.rotation.y = -d * Math.PI / 2;
-  if (FLOORS.get(t).width) inner.position.set(pw / 2 + g.w / 2, 0, u);          // 小方块：原尺寸，贴在所指位置
-  else { inner.position.x = pw / 2 + depth / 2; inner.scale.set(depth / g.w, parent.h / g.h, ww / g.w); }
+  if (FLOORS.get(t).width) inner.position.set(pw / 2 + g.w / 2, lv * g.h, u);   // 小方块：原尺寸，贴在所指位置
+  else { inner.position.set(pw / 2 + depth / 2, lv * parent.h, u); inner.scale.set(depth / g.w, parent.h / g.h, ww / g.w); }
   outer.add(inner); return outer;
 }
 function attachWing(i, j, k, w) {
-  const f = stackOf(i, j)[k]; if (!f) return null; const u = wingU(f, w.t, w.s, w.u);
-  if (f.wings.some(x => x.d === w.d && (x.u || 0) === u)) return null;
-  const obj = wingObj(f, w.d, w.t, w.s, w.v, { kind: "wing", i, j, k, d: w.d, u }, faceMat, lineMat, u);
-  f.obj.add(obj); obj.updateMatrixWorld(true); const rec = { d: w.d, t: w.t, s: w.s, v: w.v, u, obj }; f.wings.push(rec); refreshSeams(i, j); return rec;
+  const f = stackOf(i, j)[k]; if (!f) return null; const u = wingU(f, w.t, w.s, w.u), lv = w.lv || 0;
+  if (f.wings.some(x => x.d === w.d && Math.abs((x.u || 0) - u) < 1e-6 && (x.lv || 0) === lv)) return null;
+  const obj = wingObj(f, w.d, w.t, w.s, w.v, { kind: "wing", i, j, k, d: w.d, u, lv }, faceMat, lineMat, u, lv);
+  f.obj.add(obj); obj.updateMatrixWorld(true); const rec = { d: w.d, t: w.t, s: w.s, v: w.v, u, lv, obj }; f.wings.push(rec); refreshSeams(i, j); return rec;
 }
-function detachWing(i, j, k, d, u = 0) {
+function detachWing(i, j, k, d, u = 0, lv = 0) {
   const f = stackOf(i, j)[k]; if (!f) return null;
-  const n = f.wings.findIndex(x => x.d === d && Math.abs((x.u || 0) - u) < 1e-6); if (n < 0) return null;
+  const n = f.wings.findIndex(x => x.d === d && Math.abs((x.u || 0) - u) < 1e-6 && (x.lv || 0) === lv); if (n < 0) return null;
   const w = f.wings.splice(n, 1)[0]; f.obj.remove(w.obj); dispose(w.obj); refreshSeams(i, j);
-  return { d: w.d, t: w.t, s: w.s, v: w.v, u: w.u };
+  return { d: w.d, t: w.t, s: w.s, v: w.v, u: w.u, lv: w.lv || 0 };
 }
 /* 连接体：取两层楼相对的那两个面，按各自面的大小放样相连（大小、高度不同时自然过渡） */
 function floorCenter(i, j, k) {
@@ -1145,14 +1148,18 @@ function remove(i, j) {
   const f = popFloor(i, j); if (!f) return false;
   record({ op: "del", i, j, f }); changed(); emit("remove", { i, j, t: f.t, s: f.s }); return true;
 }
-function addWing(i, j, k, d, t = sel.t, s = sel.s, v, u = 0) {
-  const def = FLOORS.get(t); if (!def || def.cap || !SIZES[s]) { emit("blocked", { i, j, k, d }); return false; }
-  const w = attachWing(i, j, k, { d, t, s, u, v: v ?? Math.floor(Math.random() * 3) }); if (!w) return false;
-  record({ op: "wing+", i, j, k, w: { d, t, s, v: w.v, u: w.u } }); changed(); emit("wing", { i, j, k, d, t, s }); return true;
+function addWing(i, j, k, d, t = sel.t, s = sel.s, v, u = 0, lv = 0) {
+  const def = FLOORS.get(t); if (!def || !SIZES[s]) { emit("blocked", { i, j, k, d }); return false; }
+  const w = attachWing(i, j, k, { d, t, s, u, lv, v: v ?? Math.floor(Math.random() * 3) }); if (!w) return false;
+  record({ op: "wing+", i, j, k, w: { d, t, s, v: w.v, u: w.u, lv: w.lv } }); changed(); emit("wing", { i, j, k, d, t, s }); return true;
 }
-function removeWing(i, j, k, d, u = 0) {
-  const w = detachWing(i, j, k, d, u); if (!w) return false;
-  record({ op: "wing-", i, j, k, w }); changed(); emit("unwing", { i, j, k, d }); return true;
+/* 删一层侧翼：叠在它上面的也一起删（不会悬空），一次撤销全回来 */
+function removeWing(i, j, k, d, u = 0, lv = 0) {
+  const f = stackOf(i, j)[k]; if (!f) return false;
+  const col = f.wings.filter(x => x.d === d && Math.abs((x.u || 0) - u) < 1e-6 && (x.lv || 0) >= lv).sort((a, b) => (b.lv || 0) - (a.lv || 0));
+  if (!col.length) return false;
+  group(() => col.forEach(x => { const w = detachWing(i, j, k, d, x.u || 0, x.lv || 0); if (w) record({ op: "wing-", i, j, k, w }); }));
+  emit("unwing", { i, j, k, d }); return true;
 }
 /* ---------------- 地形：每格一列方块（土 e / 草 g / 水 w），三种方块逻辑相同：都是填满一格的方块，可叠、可贴侧面、可悬空 ----------------
    cols: "i,j" → [{a,b,t}]（层号区间 [a,b)，自下而上、同类相邻已合并）；没记录的格 = 默认地基 [-digMax, 0) 的土。
@@ -1407,7 +1414,7 @@ function apply(a, inverse) {
   if (a.op === "add" || a.op === "del") {
     if (a.op === "add" ? !inverse : inverse) { addFloor(a.i, a.j, a.f); (a.f.bridges || []).forEach(b => addBridge(b.a, b.b, b.t, b.v)); }
     else { const g = popFloor(a.i, a.j); if (g && a.op === "add") a.f = g; }
-  } else if (a.op === "wing+" || a.op === "wing-") { wingAdd ? attachWing(a.i, a.j, a.k, a.w) : detachWing(a.i, a.j, a.k, a.w.d, a.w.u || 0); }
+  } else if (a.op === "wing+" || a.op === "wing-") { wingAdd ? attachWing(a.i, a.j, a.k, a.w) : detachWing(a.i, a.j, a.k, a.w.d, a.w.u || 0, a.w.lv || 0); }
   else if (a.op === "winx") { const f = stackOf(a.i, a.j)[a.k]; if (f) { if (inverse) { a.decs.forEach(dc => detachDecal(a.i, a.j, a.k, dc.d, dc.type, dc.u)); attachWin(f); } else { detachWin(f); a.decs.forEach(dc => attachDecal(a.i, a.j, a.k, dc)); } markDirty(a.i, a.j); } }
   else if (a.op === "vox") { setVox(a.i, a.j, a.lv, (a.add ? !inverse : inverse) ? a.t : null); terrainChanged(a.i, a.j); }
   else if (a.op === "road+" || a.op === "road-") { if ((a.op === "road+") !== inverse) roads.add(K(a.i, a.j)); else roads.delete(K(a.i, a.j)); rebuildRoads(); }
@@ -1430,7 +1437,7 @@ function changed() { updateGhost(); req(); clearTimeout(saveT); saveT = setTimeo
 function exportJSON() {
   const out = [];
   cells.forEach((st, k) => { const [i, j] = k.split(",").map(Number);
-    out.push([i, j, st.map(f => [f.t, f.s, f.v, f.r || 0, f.wings.map(w => [w.d, w.t, w.s, w.v, w.u || 0]), f.z || 1, f.decals.map(x => [x.d, x.u, x.type]), f.win ? 1 : 0])]); });
+    out.push([i, j, st.map(f => [f.t, f.s, f.v, f.r || 0, f.wings.map(w => [w.d, w.t, w.s, w.v, w.u || 0, w.lv || 0]), f.z || 1, f.decals.map(x => [x.d, x.u, x.type]), f.win ? 1 : 0])]); });
   const B = baseWorld(WORLD_SEED).cols, cd = [], ser = c => c.map(r => r.a + ":" + r.b + ":" + r.t).join("|");
   new Set([...cols.keys(), ...B.keys()]).forEach(k => { const a = cols.get(k) || DEF(); if (ser(a) !== ser(B.get(k) || DEF())) cd.push([...k.split(",").map(Number), a.flatMap(r => [r.a, r.b, r.t])]); });
   return { v: 7, world: WORLD_SEED, wv, edited, stamp, cells: out, bridges: bridges.map(b => [...b.a, ...b.b, b.t, b.v]), cdiff: cd, seeded, roads: [...roads].map(k => k.split(",").map(Number)), blocks: blocks.map(b => [b.x, b.z, b.y, b.t, b.v]) };
@@ -1454,7 +1461,7 @@ function importJSON(d) {
   edited = d && d.edited != null ? d.edited : (d && d.seeded ? 0 : 1);               // 旧存档：不是默认城区就算改动过
   ((d && d.roads) || []).forEach(([i, j]) => roads.add(K(i, j))); if (roadMesh) rebuildRoads();
   ((d && d.cells) || []).forEach(([i, j, st]) => st.forEach(([t, s, v, r, ws, z, dcs, win]) => {
-    if (FLOORS.has(t) && SIZES[s] && canPlace(i, j)) addFloor(i, j, { t, s, v, r: r || 0, z: z || 1, win, decals: (dcs || []).map(([d2, u2, ty]) => ({ d: d2, u: u2, type: ty })), wings: (ws || []).filter(w => FLOORS.has(w[1])).map(([d2, t2, s2, v2, u2]) => ({ d: d2, t: t2, s: s2, v: v2, u: u2 || 0 })) }); }));
+    if (FLOORS.has(t) && SIZES[s] && canPlace(i, j)) addFloor(i, j, { t, s, v, r: r || 0, z: z || 1, win, decals: (dcs || []).map(([d2, u2, ty]) => ({ d: d2, u: u2, type: ty })), wings: (ws || []).filter(w => FLOORS.has(w[1])).map(([d2, t2, s2, v2, u2, l2]) => ({ d: d2, t: t2, s: s2, v: v2, u: u2 || 0, lv: l2 || 0 })) }); }));
   ((d && d.bridges) || []).forEach(b => addBridge(b.slice(0, 3), b.slice(3, 6), b[6] || "shaft", b[7] || 0));
   ((d && d.blocks) || []).forEach(([x, z, y, t, v]) => { if (isFixed(t)) addBlockObj({ x, z, y, t, v }); });
   hist.length = 0; changed();
@@ -1515,7 +1522,7 @@ function pick(ev) {
     const u = hit.object.userData;
     if (u.kind === "bridge") return { kind: "bridge", ref: u.ref };
     if (u.kind === "block") { const n = hit.face.normal; return { kind: "block", ref: u.ref, p: hit.point.clone(), n: [Math.round(n.x), Math.round(n.y), Math.round(n.z)] }; }
-    if (u.kind === "wing") return { kind: "wing", i: u.i, j: u.j, k: u.k, d: u.d, u: u.u || 0 };
+    if (u.kind === "wing") return { kind: "wing", i: u.i, j: u.j, k: u.k, d: u.d, u: u.u || 0, lv: u.lv || 0, top: hit.face.normal.y > .5, p: hit.point.clone() };
     const n = hit.face.normal;                                   // 楼层实体的本地法线
     if (Math.abs(n.y) > .5) return { kind: "top", i: u.i, j: u.j, k: u.k, p: hit.point.clone() };
     const d = Math.abs(n.x) >= Math.abs(n.z) ? (n.x > 0 ? 0 : 2) : (n.z > 0 ? 1 : 3), [fx, fz] = FACES[d];
@@ -1533,7 +1540,7 @@ function hoverFloor() {                                           // 当前指�
   const st = stackOf(hover.i, hover.j); return st.length ? [hover.i, hover.j, st.length - 1] : null;
 }
 function setHover(h) {
-  const key = x => x ? [x.kind, x.i, x.j, x.k, x.d, x.ter, x.lv, x.front, sel.decal && x.u != null ? Math.round(x.u / .04) : "", x.ref && (bridges.indexOf(x.ref) + "/" + blocks.indexOf(x.ref)), x.n, blockMode() ? [x.u, x.p && bsnap(x.p.x), x.p && bsnap(x.p.z)] : ""].join() : "";
+  const key = x => x ? [x.kind, x.i, x.j, x.k, x.d, x.ter, x.lv, x.top, x.front, sel.decal && x.u != null ? Math.round(x.u / .04) : "", x.ref && (bridges.indexOf(x.ref) + "/" + blocks.indexOf(x.ref)), x.n, blockMode() ? [x.u, x.p && bsnap(x.p.x), x.p && bsnap(x.p.z)] : ""].join() : "";
   if (key(h) === key(hover)) return; hover = h; updateGhost(); emit("hover", hover);
 }
 let hiOverlay = null;
@@ -1552,7 +1559,11 @@ function updateGhost() {
   hoverBox.visible = false; ghost.visible = false; highlight(null);
   if (!hover) return req();
   if (hover.kind === "bridge") { highlight(hover.ref.obj); return req(); }
-  if (hover.kind === "wing") { const f = stackOf(hover.i, hover.j)[hover.k], w = f && f.wings.find(x => x.d === hover.d && Math.abs((x.u || 0) - hover.u) < 1e-6); if (w) highlight(w.obj); return req(); }
+  if (hover.kind === "wing") { const f = stackOf(hover.i, hover.j)[hover.k];
+    if (f && hover.top && !sel.decal && !sel.view && !blockMode() && !f.wings.some(x => x.d === hover.d && Math.abs((x.u || 0) - hover.u) < 1e-6 && (x.lv || 0) === hover.lv + 1)) {
+      ghost.add(wingObj(f, hover.d, sel.t, sel.s, 0, null, ghostFace, ghostLine, hover.u, hover.lv + 1));
+      f.obj.updateMatrixWorld(true); f.obj.matrixWorld.decompose(ghost.position, ghost.quaternion, ghost.scale); ghost.visible = true; return req(); }
+    const w = f && f.wings.find(x => x.d === hover.d && Math.abs((x.u || 0) - hover.u) < 1e-6 && (x.lv || 0) === (hover.lv || 0)); if (w) highlight(w.obj); return req(); }
   if (sel.decal) {                                                  // 贴图模式
     if (sel.decal === "grass" || sel.decal === "water" || sel.decal === "earth") { const t = terrainTarget(hover);
       if (t) { const bl = bodyLevels(t.i, t.j), ok = inBoard(t.i, t.j) && !typeAt(t.i, t.j, t.lv) && t.lv < config.raiseMax && !(bl && t.lv >= bl[0] && t.lv < bl[1]);
@@ -1572,7 +1583,7 @@ function updateGhost() {
   if (hover.kind === "side") {
     const f = stackOf(hover.i, hover.j)[hover.k], def = FLOORS.get(sel.t);
     const u = f && def ? wingU(f, sel.t, sel.s, hover.u) : 0;
-    if (f && def && !def.cap && !f.wings.some(x => x.d === hover.d && (x.u || 0) === u)) {
+    if (f && def && !f.wings.some(x => x.d === hover.d && Math.abs((x.u || 0) - u) < 1e-6 && !(x.lv || 0))) {
       ghost.add(wingObj(f, hover.d, sel.t, sel.s, 0, null, ghostFace, ghostLine, u));
       f.obj.updateMatrixWorld(true); f.obj.matrixWorld.decompose(ghost.position, ghost.quaternion, ghost.scale); ghost.visible = true;   // 预览复制该层的位置朝向缩放
     }
@@ -1594,6 +1605,7 @@ function clearLinkGhost() { if (!linkGhost) return; scene.remove(linkGhost); lin
 const thinSel = () => blockMode() && floorGeo(sel.t, "M", 0).w < .05;
 function blockAim() {
   if (!hover) return null;
+  if (hover.kind === "wing") return hover.top ? blockTarget(hover.p.x, hover.p.z, sel.t, hover.p.y) : null;     // 侧翼顶上：放在所指位置
   if (thinSel() && hover.k != null && hover.i != null) return blockTarget(hover.i - HALF + .5, hover.j - HALF + .5, sel.t);
   if (hover.kind === "block") { const b = hover.ref, [nx, ny, nz] = hover.n || [0, 1, 0], w = bgeo(b).w;
     if (ny > 0) return blockTarget(b.x, b.z, sel.t);
@@ -1692,6 +1704,7 @@ function doPlace() {
   }
   if (blockMode() && (hover.kind !== "side" || thinSel())) { const p = blockAim(); if (p) placeBlock(p.x, p.z, sel.t, hover.kind === "block" && !(hover.n && hover.n[1] > 0) ? p.y : undefined); return; }
   if (hover.kind === "block") { const i = Math.floor(hover.ref.x + HALF), j = Math.floor(hover.ref.z + HALF); if (sel.tpl) placeTemplate(i, j, sel.tpl); else place(i, j); return; }   // 小方块上盖楼
+  if (hover.kind === "wing") { if (hover.top) addWing(hover.i, hover.j, hover.k, hover.d, sel.t, sel.s, undefined, hover.u, hover.lv + 1); return; }   // 在侧翼上再叠一层
   if (hover.kind === "side") addWing(hover.i, hover.j, hover.k, hover.d, sel.t, sel.s, undefined, hover.u);
   else if (hover.kind === "top") { if (sel.tpl) placeTemplate(hover.i, hover.j, sel.tpl); else place(hover.i, hover.j); }
 }
@@ -1704,7 +1717,7 @@ function doDelete() {
   if (hover.kind === "top" && hover.i != null && roads.has(K(hover.i, hover.j)) && !stackOf(hover.i, hover.j).length) { removeRoad(hover.i, hover.j); return; }
   if (hover.kind === "bridge") { if (bridges.includes(hover.ref)) disconnect(hover.ref); return; }
   if (hover.kind === "block") { if (blocks.includes(hover.ref)) removeBlock(hover.ref); return; }
-  if (hover.kind === "wing") { removeWing(hover.i, hover.j, hover.k, hover.d, hover.u || 0); return; }
+  if (hover.kind === "wing") { removeWing(hover.i, hover.j, hover.k, hover.d, hover.u || 0, hover.lv || 0); return; }
   if (hover.ter) { const b = terrainBlock(hover); if (b) delVox(b.i, b.j, b.lv); return; }        // 指着地形：删那一块
   if (stackOf(hover.i, hover.j).length) remove(hover.i, hover.j); else dig(hover.i, hover.j);
 }
