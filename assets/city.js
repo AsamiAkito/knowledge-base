@@ -235,21 +235,10 @@ registerFloor({ id: "spire", name: "尖顶", cap: true, height: 1.3, icon: I('<p
     const base = box(w * .72, .12), py = new THREE.ConeGeometry(w * .34, 1.0, 4, 1); py.rotateY(Math.PI / 4); py.translate(0, .12 + .5, 0);
     return { solid: merge([base, py]), lines: lines([[0, 1.12, 0], [0, 1.6, 0]]) };
   } });
-registerFloor({ id: "mast", name: "天线", cap: true, height: 1.3, icon: I('<path d="M12 21V4M8 21h8M9 9h6M9.8 14h4.4M7 6a5 5 0 0 1 10 0"/><circle cx="12" cy="3.5" r="1"/>'),
-  build: ({ w }) => {
-    const t = .022, H = 1.24, base = box(w * .42, .06), pole = box(t, H - .06, t, .06);
-    const L = [];                                            // 横杆、斜撑与碟形天线
-    [.38, .62, .86].forEach((y, k) => { const r2 = .12 - k * .025; L.push([-r2, y, 0], [r2, y, 0], [0, y, -r2], [0, y, r2], [-r2, y, 0], [0, y - .1, 0], [r2, y, 0], [0, y - .1, 0]); });
-    for (let q = 0; q < 12; q++) { const a = q / 12 * Math.PI, b = (q + 1) / 12 * Math.PI, rr = .07;
-      L.push([.03 + Math.sin(a) * .02, .5 + Math.cos(a) * rr, .03 + Math.sin(a) * rr * .2], [.03 + Math.sin(b) * .02, .5 + Math.cos(b) * rr, .03 + Math.sin(b) * rr * .2]); }
-    const lg = new THREE.BufferGeometry(), y0 = H - .01, s2 = .022, pos = [], col = [];
-    [[1, 0], [0, 1], [-1, 0], [0, -1]].forEach(([nx, nz]) => { const tx = -nz, tz = nx, c = t / 2 + .002;
-      const P = (a, b) => [nx * c + tx * a * s2, y0 + b * s2 * 2, nz * c + tz * a * s2];
-      [P(-1, 0), P(1, 0), P(1, 1), P(-1, 0), P(1, 1), P(-1, 1)].forEach(v => { pos.push(...v); col.push(1, .25, .2); }); });
-    lg.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); lg.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
-    return { solid: merge([base, pole]), lines: lines(L), lights: lg };
-  } });
-registerFloor({ id: "antenna", name: "避雷针", cap: true, height: .3, icon: I('<path d="M12 3v9M10 6h4"/><rect x="9" y="12" width="6" height="4"/><path d="M5 20h14v-4H5z"/>'),
+/* 天线：一根竖线（细到看不出粗细的实体只用来拾取），夜里不发光 */
+registerFloor({ id: "pole", name: "天线", cap: true, height: .8, icon: I('<path d="M12 3v18"/>'),
+  build: ({ h }) => ({ solid: box(.012, h, .012), lines: lines([[0, 0, 0], [0, h, 0]]), autoEdges: false }) });
+registerFloor({ id: "antenna", name: "避雷针", cap: true, hidden: true, height: .3, icon: I('<path d="M12 3v9M10 6h4"/><rect x="9" y="12" width="6" height="4"/><path d="M5 20h14v-4H5z"/>'),
   build: ({ w }) => ({ solid: merge([box(w * .92, .08), box(w * .34, .22, w * .34, .08)]),
     lines: lines([[0, .3, 0], [0, 1.25, 0], [-.07, .95, 0], [.07, .95, 0], [0, .95, -.07], [0, .95, .07]]) }) });
 registerFloor({ id: "dome", name: "圆顶", cap: true, height: w => w * .45, icon: I('<path d="M5 17a7 7 0 0 1 14 0z"/><path d="M12 10v7M4 17h16"/>'),
@@ -340,11 +329,11 @@ registerTemplate({ id: "random", name: "随机城市楼", icon: IT('<rect x="5" 
 /* ---------------- 配色：白天 / 夜晚两套，按城里的时间在两者之间渐变 ---------------- */
 function palette(night) {
   if (night) return { tLine: 0x596080, tLow: 0x1d2030, tHigh: 0x343a52, tWall: 0x151722, tPit: 0x171925, gLow: 0x1e2e24, gHigh: 0x2f4a35, water: 0x1b3045, waterFall: 0x24405a, road: 0x272a37, face: 0x22252f, line: 0x7d84a0, ground: 0x1d2030, side: 0x181a26, side2: 0x151721, minor: 0x272b3c, major: 0x333850, sky: 0x9aa0c0, gnd: 0x1a1c28, ambient: 1.6, sun: .6, clear: 0x13141b };
-  return { tLine: 0x9a9cad, tLow: 0xfbfbfd, tHigh: 0xb4b7c7, tWall: 0xcfd0dc, tPit: 0xe4e4ec, gLow: 0xd9e8cb, gHigh: 0x9fbb8a, water: 0xcfe3ef, waterFall: 0xb7d2e4, road: 0xebebf0, face: 0xffffff, line: 0x2c2e36, ground: 0xfcfcfd, side: 0xececf2, side2: 0xe1e1ea, minor: 0xececf2, major: 0xdadae4, sky: 0xffffff, gnd: 0xdedeea, ambient: 2.9, sun: .5, clear: 0xf6f6f4 };
+  return { tLine: 0x9a9cad, tLow: 0xeef0f3, tHigh: 0xb0b3c3, tWall: 0xcfd0dc, tPit: 0xe4e4ec, gLow: 0xd9e8cb, gHigh: 0x9fbb8a, water: 0xcfe3ef, waterFall: 0xb7d2e4, road: 0xe2e2e8, face: 0xffffff, line: 0x1c1d24, ground: 0xeceef1, side: 0xe4e4ec, side2: 0xd8d8e2, minor: 0xe2e3ea, major: 0xd0d0dc, sky: 0xffffff, gnd: 0xdedeea, ambient: 3.4, sun: .75, clear: 0xf6f6f4 };
 }
 
 function blendPalette(t) {
-  t = 1 - Math.pow(1 - t, 2.4);                      // 天一擦黑楼体就暗下来，清晨 / 黄昏不会发白
+  t = 1 - Math.pow(1 - t, 1.6);                      // 天擦黑时楼体暗得快一些，清晨不会一直发灰
   const a = palette(false), b = palette(true), o = {};
   for (const k in a) o[k] = k === "ambient" || k === "sun" ? a[k] + (b[k] - a[k]) * t : new THREE.Color(a[k]).lerp(new THREE.Color(b[k]), t).getHex();
   return o;
@@ -559,7 +548,7 @@ function fadeGrid() {
   const ppc = (host ? host.clientHeight : 300) / (2 * cam.dist * Math.tan(rad(config.fov) / 2));
   gridMinor.material.opacity = Math.max(0, Math.min(1, (ppc - 5) / 10));
   gridMinor.visible = gridMinor.material.opacity > .02;
-  facadeMat.opacity = Math.max(0, Math.min(1, (ppc - 4) / 10));          // 拉远时立面细节淡出，只留楼体轮廓
+  facadeMat.opacity = Math.max(0, Math.min(1, (ppc - 2.5) / 8));          // 拉远时立面细节淡出，只留楼体轮廓
   facadeMat.opacity *= 1 - dark * .6;                                      // 入夜立面线调暗，楼体不发白，亮着的窗更显眼
   facadeMat.visible = facadeMat.opacity > .02;
   winLineMat.opacity = Math.max(0, Math.min(1, (ppc - 9) / 12)) * (1 - dark * .8);   // 窗框比立面线更早淡出，入夜后让位给亮着的窗格
@@ -638,8 +627,10 @@ const stackOf = (i, j) => cells.get(K(i, j)) || [];
 const levelOf = (i, j) => terrain.get(K(i, j)) || 0;
 /* 这一格现在的最高处：最上一层楼的顶，或者更高的地块顶（地块可以叠在楼顶上，之后的楼层接着往上盖） */
 function stackTop(i, j) {
-  const st = stackOf(i, j), t = levelOf(i, j) * config.digLevel, f = st[st.length - 1];
-  return f ? Math.max(t, f.obj.position.y + f.h) : t;
+  const st = stackOf(i, j), f = st[st.length - 1];
+  let t = levelOf(i, j) * config.digLevel; if (f) t = Math.max(t, f.obj.position.y + f.h);
+  if (!st.length) blocks.forEach(b => { if (Math.floor(b.x + HALF) === i && Math.floor(b.z + HALF) === j) t = Math.max(t, b.y + bgeo(b).h); });   // 格里的小方块
+  return t;
 }
 /* 楼身占的层号区间 [a, b)：地块不能放进去 */
 function bodyLevels(i, j) {
@@ -653,6 +644,11 @@ function canPlace(i, j) {
 }
 /* 一组可渲染对象：实体 + 线 + 窗格；tag 写进实体的 userData 供拾取 */
 function meshSet(g, tag, mat = faceMat, lmat = lineMat) {
+  if (g.w < .03 && tag) {                                   // 极细的楼层（天线）：画线，拾取用一个看不见的粗盒子
+    const grp = new THREE.Group(), hit = new THREE.Mesh(box(.12, g.h, .12), new THREE.MeshBasicMaterial({ visible: false }));
+    hit.userData = Object.assign({}, tag); hitMeshes.push(hit); grp.add(hit);
+    grp.add(new THREE.LineSegments(g.edges, lmat)); grp.userData = Object.assign({}, tag); return grp;
+  }
   const grp = new THREE.Group(), m = new THREE.Mesh(g.solid, mat);
   if (tag) { m.userData = tag; hitMeshes.push(m); }
   grp.add(m);
@@ -743,7 +739,7 @@ function decalGeo(f, d, u, type) {
   const q = [P(u - pw / 2, y0), P(u + pw / 2, y0), P(u + pw / 2, y1), P(u - pw / 2, y0), P(u + pw / 2, y1), P(u - pw / 2, y1)], c3 = type === "door" ? [.85, .62, .32] : [1, .82, .42];
   const pos = [], col = []; q.forEach(v => { pos.push(...v); col.push(...c3); });
   const pg = new THREE.BufferGeometry(); pg.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); pg.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
-  return { lines: lines(L), pane: type === "door" || winOf(type).lit ? pg : null };     // 关灯的窗只有外框
+  return { lines: lines(L), pane: type !== "door" && winOf(type).lit ? pg : null };     // 门和关灯的窗只有外框
 }
 function decalU(f, type, u) {
   const g = floorGeo(f.t, f.s, f.v), lim = Math.max(0, g.w / 2 - (type === "door" ? .06 : winSize(type, 1)[0] / 2 + .01));
@@ -1162,6 +1158,7 @@ function colsFromMaps(T, W, G) {
 }
 /* 选中的面 → 要加块的位置 / 要删的那块 */
 function terrainTarget(h) {
+  if (h && h.kind === "block") { const i = Math.floor(h.ref.x + HALF), j = Math.floor(h.ref.z + HALF); return { i, j, lv: Math.ceil(stackTop(i, j) / config.digLevel - 1e-6) }; }   // 小方块上：叠在最高处
   if (!h || h.kind !== "top" || h.i == null) return null;
   if (h.k != null) return { i: h.i, j: h.j, lv: Math.ceil(stackTop(h.i, h.j) / config.digLevel - 1e-6) };   // 楼顶：叠在最高处
   if (h.ter === "side") return { i: h.front[0], j: h.front[1], lv: h.lv };
@@ -1329,6 +1326,10 @@ function genRiver(T, seed) {
   out.forEach((lvl, k) => { const [i, j] = k.split(",").map(Number);
     for (let a = -12; a <= 12; a++) for (let b = -12; b <= 12; b++) { const kk = K(i + a, j + b); if (out.has(kk) || !inBoard(i + a, j + b)) continue;
       const lim = Math.max(lvl, 0) + 1 + Math.max(Math.abs(a), Math.abs(b)) * 7, cur = L(i + a, j + b); if (cur > lim) T.set(kk, lim); } });
+  /* 河岸：紧挨河道（含斜角）的陆地若比水面低，垫到与水面同高，河不会悬在两岸之上 */
+  out.forEach((lvl, k) => { const [i, j] = k.split(",").map(Number);
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const kk = K(i + a, j + b); if (out.has(kk) || !inBoard(i + a, j + b)) continue;
+      if (L(i + a, j + b) < lvl + 1) T.set(kk, lvl + 1); } });
   return out;
 }
 function fill(i, j) { return addVox(i, j, levelOf(i, j), "e"); }        // 顶上加一块土
@@ -1640,6 +1641,7 @@ function doPlace() {
     return;
   }
   if (blockMode() && hover.kind !== "side") { const p = blockAim(); if (p) placeBlock(p.x, p.z, sel.t, hover.kind === "block" && !(hover.n && hover.n[1] > 0) ? p.y : undefined); return; }
+  if (hover.kind === "block") { const i = Math.floor(hover.ref.x + HALF), j = Math.floor(hover.ref.z + HALF); if (sel.tpl) placeTemplate(i, j, sel.tpl); else place(i, j); return; }   // 小方块上盖楼
   if (hover.kind === "side") addWing(hover.i, hover.j, hover.k, hover.d, sel.t, sel.s, undefined, hover.u);
   else if (hover.kind === "top") { if (sel.tpl) placeTemplate(hover.i, hover.j, sel.tpl); else place(hover.i, hover.j); }
 }
@@ -1763,8 +1765,6 @@ function renderBar() {
     + '<button class="cb-btn" data-act="pure" aria-label="全览">' + FULL + '</button></div><span class="cb-sep"></span>'
     + '<div class="cb-group cb-types">' + ORDER.filter(id => !FLOORS.get(id).hidden).map(id => { const d = FLOORS.get(id);
       return '<button class="cb-btn' + (sel.t === id && !sel.tpl && !sel.decal && !sel.view ? ' on' : '') + '" data-t="' + id + '" aria-label="' + d.name + '">' + (d.icon || d.name.slice(0, 1)) + '</button>'; }).join("") + '</div>'
-    + '<span class="cb-sep"></span><div class="cb-group">' + TORDER.map(id => { const d = TEMPLATES.get(id);
-      return '<button class="cb-btn' + (sel.tpl === id ? ' on' : '') + '" data-tpl="' + id + '" aria-label="' + d.name + '">' + (d.icon || d.name.slice(0, 1)) + '</button>'; }).join("") + '</div>'
     + '<span class="cb-sep"></span><div class="cb-group">' + DECALS.map(([id, name, icon]) => '<button class="cb-btn' + (sel.decal === id ? ' on' : '') + '" data-decal="' + id + '" aria-label="' + name + '">' + icon + '</button>').join("") + '</div>'
     + '<span class="cb-sep"></span><div class="cb-group">' + Object.keys(SIZES).map(s => '<button class="cb-btn cb-size' + (sel.s === s ? ' on' : '') + '" data-s="' + s + '">' + s + '</button>').join("") + '</div>'
     + '<span class="cb-sep"></span><div class="cb-group">'
@@ -1872,7 +1872,7 @@ function showTypePreview(btn) {
   if (tp.obj) tp.sc.remove(tp.obj);
   const grp = new THREE.Group();
   /* 楼型：普通层叠 3 层，封顶层放在两层光面塔身上；地标：按计划逐格叠起（侧翼与连接省略） */
-  const floors = tplId ? templatePlan(tplId, 7).floors : (def.cap ? ["shaft", "shaft", t] : [t, t, t]).map(id => ({ di: 0, dj: 0, t: id, s: "M", r: 0, z: 1 }));
+  const floors = tplId ? templatePlan(tplId, 7).floors : [{ di: 0, dj: 0, t, s: "M", r: 0, z: 1 }];   // 楼型：单层
   const tops = {}, objs = floors.map(f => { const key = f.di + "," + f.dj, g = floorGeo(f.t, f.s, 1), o = meshSet(g);
     o.position.set(f.di, tops[key] || 0, f.dj); orient(o, g.w, f.r, f.z); tops[key] = (tops[key] || 0) + g.h; grp.add(o); return { f, o, key }; });
   objs.forEach(({ f, o, key }, k) => { if (!FLOORS.get(f.t).seamless) return;            // 同 refreshSeams：相同的相邻层不画交界线
