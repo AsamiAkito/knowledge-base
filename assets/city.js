@@ -2,11 +2,12 @@
    线条城市 —— 右下角小游戏（three.js r160，本地 vendor）
    ------------------------------------------------------------
    · 常态显示在 #corner；点左上角小三角展开为屏幕中间的大窗口
-   · 190×190 棋盘；滚轮缩放（朝鼠标位置）、左键拖动旋转/俯仰、
-     右键或 Shift+拖动平移
-   · 底部选楼层类型与大小；空格放置（长按连放）、D 删除（长按连删）、
-     Ctrl+Z 撤销、Ctrl+Shift+Z / Ctrl+Y 重做
-   · 夜晚（本地 18:00–6:00，或手动切换）窗户亮灯
+   · 190×190 棋盘，透视相机（近大远小）；左键拖动绕棋盘中心旋转 / 改俯仰，
+     滚轮缩放；展开后右键或 Shift+拖动平移、滚轮朝鼠标位置缩放
+   · 右下角只能旋转和缩放；展开后才能编辑：
+     空格放置（长按连放）、D 删除（长按连删）、Ctrl+Z 撤销、Ctrl+Shift+Z / Ctrl+Y 重做、
+     Q / E 选左 / 右一个楼层、W / S 增大 / 减小尺寸、R 顺时针旋转 15°
+   · 昼夜跟随网页主题：暗色主题即夜晚，窗户亮灯（游戏内不能切换）
    · 每位访客的城市存在本机 localStorage
    · 扩展接口：window.CityGame（见文件末尾）
    ============================================================ */
@@ -18,8 +19,9 @@ const KEY_CITY = "myspace-city", KEY_SEL = "myspace-city-sel";
 const config = {
   phiMin: 12, phiMax: 85,                         // 俯仰角范围（度，离地面的仰角）
   thetaRange: null,                               // 水平旋转范围 [min,max]（度），null 为不限
-  zoomMin: .25, zoomMax: 14,                      // 缩放范围
-  view: 60,                                       // zoom=1 时视野高度（格）
+  fov: 35,                                        // 透视视角（度）
+  distMin: 4, distMax: 420,                       // 相机到注视点的距离范围（缩放）
+  rotStep: 15,                                    // R 键每次顺时针旋转的角度
   repeatDelay: 300, repeatEvery: 90               // 长按连放 / 连删的节奏（毫秒）
 };
 
@@ -169,31 +171,29 @@ registerFloor({ id: "dome", name: "圆顶", cap: true, height: w => w * .45, ico
 
 /* ---------------- 配色（随页面主题与昼夜） ---------------- */
 function palette(night) {
-  const dark = document.documentElement.getAttribute("data-theme") === "dark";
   if (night) return { face: 0x262938, line: 0x737a96, ground: 0x1f2230, side: 0x191b26, side2: 0x161822, minor: 0x2a2e40, major: 0x363b52, sky: 0x9aa0c0, gnd: 0x1a1c28, ambient: 1.6, sun: .7, clear: 0x15161d };
-  if (dark) return { face: 0x34363d, line: 0xa6a9b2, ground: 0x2a2c31, side: 0x232529, side2: 0x1f2024, minor: 0x34363c, major: 0x43464e, sky: 0xffffff, gnd: 0x8a89a8, ambient: 2.1, sun: .9, clear: 0x1c1d20, pane: 0x45484f };
   return { face: 0xffffff, line: 0x4a4d5a, ground: 0xfbfbfd, side: 0xe4e3f1, side2: 0xd6d5ea, minor: 0xebebf2, major: 0xd8d8e4, sky: 0xffffff, gnd: 0xc9c8e6, ambient: 2.6, sun: .9, clear: 0xf2f2ee, pane: 0xe2e4ee };
 }
 
 /* ---------------- 状态 ---------------- */
 const cells = new Map();                  // "i,j" → [{t,s,v,obj}]
 const hist = [], redoStack = [];
-let sel = (() => { try { return JSON.parse(localStorage.getItem(KEY_SEL)) || null; } catch (e) { return null; } })() || { t: "window", s: "M" };
-let nightOverride = null, night = false;
+let sel = Object.assign({ t: "window", s: "M", r: 0 }, (() => { try { return JSON.parse(localStorage.getItem(KEY_SEL)) || {}; } catch (e) { return {}; } })());
+let night = false;
 let hover = null;                          // {i,j}
 let expanded = false;
 
 /* ---------------- three.js 场景 ---------------- */
 let renderer, scene, camera, hemi, sun, faceMat, lineMat, paneDay, paneNight, ghostFace, ghostLine;
 let ground, groundEdges, gridMinor, gridMajor, floorsGroup, hoverBox, ghost, faceMeshes = [];
-const cam = { tx: 0, tz: 0, theta: 45, phi: 35.26, zoom: 1.5 };
+const cam = { tx: 0, tz: 0, theta: 45, phi: 35.26, dist: 64 };
 
 function initThree() {
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
   renderer.domElement.className = "city-canvas";
   scene = new THREE.Scene();
-  camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -2000, 2000);
+  camera = new THREE.PerspectiveCamera(config.fov, 2, .1, 6000);
   hemi = new THREE.HemisphereLight(0xffffff, 0xbdbce0, .85); scene.add(hemi);
   sun = new THREE.DirectionalLight(0xffffff, .3); sun.position.set(-1, 2.2, .7); scene.add(sun);
   faceMat = new THREE.MeshLambertMaterial({ color: 0xffffff, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
@@ -240,7 +240,7 @@ function applyPalette() {
 }
 /* 网格随缩放淡入淡出：格子太密时只留每 10 格的主线 */
 function fadeGrid() {
-  const ppc = (host ? host.clientHeight : 300) / (config.view / cam.zoom);   // 每格像素
+  const ppc = (host ? host.clientHeight : 300) / (2 * cam.dist * Math.tan(rad(config.fov) / 2));   // 注视点附近每格像素
   gridMinor.material.opacity = Math.max(0, Math.min(1, (ppc - 5) / 10));
   gridMinor.visible = gridMinor.material.opacity > .02;
 }
@@ -250,17 +250,21 @@ const rad = d => d * Math.PI / 180;
 function clampCam() {
   cam.phi = Math.max(config.phiMin, Math.min(config.phiMax, cam.phi));
   if (config.thetaRange) cam.theta = Math.max(config.thetaRange[0], Math.min(config.thetaRange[1], cam.theta));
-  cam.zoom = Math.max(config.zoomMin, Math.min(config.zoomMax, cam.zoom));
+  cam.dist = Math.max(config.distMin, Math.min(config.distMax, cam.dist));
   cam.tx = Math.max(-HALF, Math.min(HALF, cam.tx)); cam.tz = Math.max(-HALF, Math.min(HALF, cam.tz));
+}
+function rotateBy(dTheta, dPhi) {
+  const old = cam.theta; cam.theta += dTheta; cam.phi += dPhi; clampCam();
+  const d = rad(cam.theta - old), c = Math.cos(d), sn = Math.sin(d), x = cam.tx, z = cam.tz;
+  cam.tx = x * c + z * sn; cam.tz = z * c - x * sn; updateCamera();
 }
 function updateCamera() {
   clampCam();
-  const R = 400, ph = rad(cam.phi), th = rad(cam.theta);
+  const R = cam.dist, ph = rad(cam.phi), th = rad(cam.theta);
   camera.position.set(cam.tx + R * Math.cos(ph) * Math.sin(th), R * Math.sin(ph), cam.tz + R * Math.cos(ph) * Math.cos(th));
   camera.lookAt(cam.tx, 0, cam.tz);
-  const w = host ? host.clientWidth : 300, h = host ? host.clientHeight : 150, vh = config.view / cam.zoom, vw = vh * w / Math.max(1, h);
-  camera.left = -vw / 2; camera.right = vw / 2; camera.top = vh / 2; camera.bottom = -vh / 2;
-  camera.updateProjectionMatrix(); req();
+  const w = host ? host.clientWidth : 300, h = host ? host.clientHeight : 150;
+  camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix(); req();
 }
 function resize() {
   if (!host || !renderer) return;
@@ -283,12 +287,16 @@ function makeFloorObj(t, s, v) {
   if (g.panes) { const pm = new THREE.Mesh(g.panes, night ? paneNight : paneDay); pm.userData.pane = true; grp.add(pm); }
   return grp;
 }
-function addFloor(i, j, t, s, v) {
+function orient(obj, s, r) {
+  const a = rad(r || 0), w = SIZES[s], k = Math.min(1, .96 / (w * (Math.abs(Math.cos(a)) + Math.abs(Math.sin(a)))));
+  obj.rotation.y = -a; obj.scale.set(k, 1, k);
+}
+function addFloor(i, j, t, s, v, r = 0) {
   const st = cells.get(K(i, j)) || [];
   const y = stackTop(i, j), obj = makeFloorObj(t, s, v);
-  obj.position.set(i - HALF + .5, y, j - HALF + .5);
+  obj.position.set(i - HALF + .5, y, j - HALF + .5); orient(obj, s, r);
   obj.traverse(o => { o.userData.cell = [i, j]; });
-  floorsGroup.add(obj); st.push({ t, s, v, obj }); cells.set(K(i, j), st);
+  floorsGroup.add(obj); st.push({ t, s, v, r, obj }); cells.set(K(i, j), st);
 }
 function popFloor(i, j) {
   const st = cells.get(K(i, j)); if (!st || !st.length) return null;
@@ -297,36 +305,36 @@ function popFloor(i, j) {
   if (!st.length) cells.delete(K(i, j));
   return f;
 }
-function place(i, j, t = sel.t, s = sel.s, v) {
+function place(i, j, t = sel.t, s = sel.s, r = sel.r, v) {
   if (!FLOORS.has(t) || !SIZES[s]) return false;
   if (!canPlace(i, j)) { emit("blocked", { i, j }); return false; }
   v = v ?? Math.floor(Math.random() * 3);
-  addFloor(i, j, t, s, v); hist.push({ op: "add", i, j, t, s, v }); redoStack.length = 0; trimHist();
-  changed(); emit("place", { i, j, t, s }); return true;
+  addFloor(i, j, t, s, v, r); hist.push({ op: "add", i, j, t, s, v, r }); redoStack.length = 0; trimHist();
+  changed(); emit("place", { i, j, t, s, r }); return true;
 }
 function remove(i, j) {
   const f = popFloor(i, j); if (!f) return false;
-  hist.push({ op: "del", i, j, t: f.t, s: f.s, v: f.v }); redoStack.length = 0; trimHist();
+  hist.push({ op: "del", i, j, t: f.t, s: f.s, v: f.v, r: f.r }); redoStack.length = 0; trimHist();
   changed(); emit("remove", { i, j, t: f.t, s: f.s }); return true;
 }
 function undo() {
   const a = hist.pop(); if (!a) return false;
-  if (a.op === "add") popFloor(a.i, a.j); else addFloor(a.i, a.j, a.t, a.s, a.v);
+  if (a.op === "add") popFloor(a.i, a.j); else addFloor(a.i, a.j, a.t, a.s, a.v, a.r);
   redoStack.push(a); changed(); emit("undo", a); return true;
 }
 function redo() {
   const a = redoStack.pop(); if (!a) return false;
-  if (a.op === "add") addFloor(a.i, a.j, a.t, a.s, a.v); else popFloor(a.i, a.j);
+  if (a.op === "add") addFloor(a.i, a.j, a.t, a.s, a.v, a.r); else popFloor(a.i, a.j);
   hist.push(a); changed(); emit("redo", a); return true;
 }
 function trimHist() { if (hist.length > 2000) hist.splice(0, hist.length - 2000); }
 function clearCity() { [...cells.keys()].forEach(k => { const [i, j] = k.split(",").map(Number); while (popFloor(i, j)); }); hist.length = 0; redoStack.length = 0; changed(); }
 let saveT = 0;
 function changed() { updateGhost(); req(); clearTimeout(saveT); saveT = setTimeout(save, 300); emit("change"); }
-function exportJSON() { const out = []; cells.forEach((st, k) => { const [i, j] = k.split(",").map(Number); out.push([i, j, st.map(f => [f.t, f.s, f.v])]); }); return { v: 1, cells: out }; }
+function exportJSON() { const out = []; cells.forEach((st, k) => { const [i, j] = k.split(",").map(Number); out.push([i, j, st.map(f => [f.t, f.s, f.v, f.r || 0])]); }); return { v: 1, cells: out }; }
 function importJSON(d) {
   clearCity();
-  ((d && d.cells) || []).forEach(([i, j, st]) => st.forEach(([t, s, v]) => { if (FLOORS.has(t) && SIZES[s] && canPlace(i, j)) addFloor(i, j, t, s, v); }));
+  ((d && d.cells) || []).forEach(([i, j, st]) => st.forEach(([t, s, v, r]) => { if (FLOORS.has(t) && SIZES[s] && canPlace(i, j)) addFloor(i, j, t, s, v, r || 0); }));
   changed();
 }
 function save() { try { localStorage.setItem(KEY_CITY, JSON.stringify(exportJSON())); } catch (e) { } }
@@ -364,7 +372,7 @@ function updateGhost() {
   if (ok && FLOORS.has(sel.t)) {
     const g = floorGeo(sel.t, sel.s, 0);
     ghost.add(new THREE.Mesh(g.solid, ghostFace), new THREE.LineSegments(g.edges, ghostLine));
-    ghost.position.set(x, y, z); ghost.visible = true;
+    ghost.position.set(x, y, z); orient(ghost, sel.s, sel.r); ghost.visible = true;
   } else ghost.visible = false;
   req();
 }
@@ -375,35 +383,39 @@ function bindPointer(cv) {
   cv.addEventListener("contextmenu", e => e.preventDefault());
   cv.addEventListener("pointerenter", () => { inside = true; });
   cv.addEventListener("pointerleave", () => { inside = false; if (!drag) setHover(null); });
+  const hov = e => setHover(expanded ? pick(e) : null);
   cv.addEventListener("pointerdown", e => {
     e.stopPropagation();
-    drag = { x: e.clientX, y: e.clientY, pan: e.button === 2 || e.button === 1 || e.shiftKey, th: cam.theta, ph: cam.phi, g: groundAt(e), tx: cam.tx, tz: cam.tz, moved: 0 };
+    drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, pan: expanded && (e.button === 2 || e.button === 1 || e.shiftKey), g: groundAt(e), moved: 0 };
     cv.setPointerCapture(e.pointerId); cv.classList.add("grabbing");
   });
   cv.addEventListener("pointermove", e => {
     if (drag) {
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.moved = Math.max(drag.moved, Math.abs(dx) + Math.abs(dy));
       if (drag.pan) { const g = groundAt(e); if (g && drag.g) { cam.tx -= g.x - drag.g.x; cam.tz -= g.z - drag.g.z; updateCamera(); } }
-      else { cam.theta = drag.th - dx * .35; cam.phi = drag.ph + dy * .25; updateCamera(); }
+      else { rotateBy(-(e.clientX - drag.lx) * .35, (e.clientY - drag.ly) * .25); drag.lx = e.clientX; drag.ly = e.clientY; }
       return;
     }
-    setHover(pick(e));
+    hov(e);
   });
-  const end = e => { if (!drag) return; drag = null; cv.classList.remove("grabbing"); try { cv.releasePointerCapture(e.pointerId); } catch (_) { } setHover(pick(e)); };
+  const end = e => { if (!drag) return; drag = null; cv.classList.remove("grabbing"); try { cv.releasePointerCapture(e.pointerId); } catch (_) { } hov(e); };
   cv.addEventListener("pointerup", end); cv.addEventListener("pointercancel", end);
   cv.addEventListener("wheel", e => {
     e.preventDefault(); e.stopPropagation();
-    const before = groundAt(e);
-    cam.zoom *= Math.pow(1.0018, -e.deltaY); updateCamera();
-    const after = groundAt(e);
+    const before = expanded ? groundAt(e) : null;
+    cam.dist *= Math.pow(1.0018, e.deltaY); updateCamera();
+    const after = before ? groundAt(e) : null;
     if (before && after) { cam.tx += before.x - after.x; cam.tz += before.z - after.z; updateCamera(); }
-    setHover(pick(e));
+    hov(e);
   }, { passive: false });
 }
 
 /* ---------------- 键盘：空格放 / D 删 / Ctrl+Z ---------------- */
 const holds = {};
-function active() { return expanded || inside; }
+function active() { return expanded; }
+function cycleType(d) { const k = ORDER.indexOf(sel.t); select(ORDER[(k + d + ORDER.length) % ORDER.length]); }
+function cycleSize(d) { const ks = Object.keys(SIZES), k = ks.indexOf(sel.s); select(null, ks[Math.max(0, Math.min(ks.length - 1, k + d))]); }
+function rotateSel() { sel.r = ((sel.r || 0) + config.rotStep) % 360; select(); }
 function typing(t) { return t && t.closest && t.closest("input,textarea,select,[contenteditable]"); }
 function startHold(k, fn) {
   if (holds[k]) return; fn();
@@ -418,24 +430,24 @@ addEventListener("keydown", e => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (k === " " || e.code === "Space") { e.preventDefault(); if (!e.repeat) startHold("space", () => { if (hover) place(hover.i, hover.j); }); return; }
   if (k === "d") { e.preventDefault(); if (!e.repeat) startHold("d", () => { if (hover) remove(hover.i, hover.j); }); return; }
+  if (k === "q") { e.preventDefault(); cycleType(-1); return; }
+  if (k === "e") { e.preventDefault(); cycleType(1); return; }
+  if (k === "w") { e.preventDefault(); cycleSize(1); return; }
+  if (k === "s") { e.preventDefault(); cycleSize(-1); return; }
+  if (k === "r") { e.preventDefault(); rotateSel(); return; }
   if (k === "escape" && expanded) { e.preventDefault(); collapse(); }
 }, true);
 addEventListener("keyup", e => { const k = e.key.toLowerCase(); if (k === " " || e.code === "Space") stopHold("space"); if (k === "d") stopHold("d"); });
 addEventListener("blur", () => { stopHold("space"); stopHold("d"); });
 
 /* ---------------- 昼夜 ---------------- */
-function autoNight() { const h = new Date().getHours(); return h >= 18 || h < 6; }
-function setNight(v) { nightOverride = v; refreshNight(); }
+function themeNight() { return document.documentElement.getAttribute("data-theme") === "dark"; }
 function refreshNight() {
-  const n = nightOverride === null ? autoNight() : nightOverride;
+  const n = themeNight();
   if (n !== night || !scene) { night = n; if (scene) applyPalette(); emit("night", night); }
-  renderBar();
 }
-setInterval(refreshNight, 60e3);
 
 /* ---------------- 界面：右下角、展开窗口、底部选择栏 ---------------- */
-const SUN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
-const MOON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>';
 const UNDO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>';
 const REDO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg>';
 const extraButtons = [];                 // addButton() 新增的按钮
@@ -446,14 +458,13 @@ function renderBar() {
       return '<button class="cb-btn' + (sel.t === id ? ' on' : '') + '" data-t="' + id + '" title="' + d.name + '">' + (d.icon || d.name.slice(0, 1)) + '</button>'; }).join("") + '</div>'
     + '<span class="cb-sep"></span><div class="cb-group">' + Object.keys(SIZES).map(s => '<button class="cb-btn cb-size' + (sel.s === s ? ' on' : '') + '" data-s="' + s + '">' + s + '</button>').join("") + '</div>'
     + '<span class="cb-sep"></span><div class="cb-group">'
-    + '<button class="cb-btn" data-act="night" title="昼 / 夜">' + (night ? MOON : SUN) + '</button>'
     + '<button class="cb-btn" data-act="undo" title="撤销 Ctrl+Z">' + UNDO + '</button>'
     + '<button class="cb-btn" data-act="redo" title="重做 Ctrl+Shift+Z">' + REDO + '</button>'
     + extraButtons.map((b, k) => '<button class="cb-btn" data-x="' + k + '" title="' + (b.title || "") + '">' + (b.icon || b.title || "") + '</button>').join("")
     + '</div>';
 }
-function select(t, s) {
-  if (t && FLOORS.has(t)) sel.t = t; if (s && SIZES[s]) sel.s = s;
+function select(t, s, r) {
+  if (t && FLOORS.has(t)) sel.t = t; if (s && SIZES[s]) sel.s = s; if (r != null) sel.r = ((+r % 360) + 360) % 360;
   try { localStorage.setItem(KEY_SEL, JSON.stringify(sel)); } catch (e) { }
   renderBar(); updateGhost(); emit("select", Object.assign({}, sel));
 }
@@ -464,6 +475,7 @@ function expand() {
 }
 function collapse() {
   if (!expanded) return; expanded = false;
+  stopHold("space"); stopHold("d"); setHover(null);
   pop.classList.remove("show"); mount(corner.querySelector(".city-host")); emit("collapse");
 }
 
@@ -473,9 +485,11 @@ function injectCSS() {
   .city-host{position:absolute;inset:0;overflow:hidden}
   .city-canvas{display:block;width:100%;height:100%;cursor:grab;touch-action:none}
   .city-canvas.grabbing{cursor:grabbing}
-  .city-tri{position:absolute;left:8px;top:8px;width:14px;height:14px;border:0;padding:0;cursor:pointer;z-index:2;
-    background:var(--accent);clip-path:polygon(0 0,100% 0,0 100%);transition:transform var(--d2,200ms) var(--e-out,ease)}
-  .city-tri:hover{transform:scale(1.25)}
+  .city-tri{position:absolute;left:0;top:0;width:36px;height:36px;border:0;padding:0;margin:0;cursor:pointer;z-index:3;background:transparent}
+  .city-tri::before{content:"";position:absolute;left:0;top:0;width:18px;height:18px;background:var(--accent);
+    clip-path:polygon(0 0,100% 0,0 100%);transition:width var(--d2,200ms) var(--e-out,ease),height var(--d2,200ms) var(--e-out,ease)}
+  .city-tri:hover::before{width:26px;height:26px}
+  .city-tri:focus-visible{outline:0}.city-tri:focus-visible::before{width:26px;height:26px}
   #corner.city-on{padding:0}
   .city-pop{position:fixed;inset:0;z-index:88;display:flex;align-items:center;justify-content:center;padding:24px;
     background:rgba(12,13,15,.5);opacity:0;pointer-events:none;transition:opacity var(--d2,200ms) var(--e-out,ease)}
@@ -516,11 +530,11 @@ function buildUI() {
   bar.addEventListener("click", e => {
     const b = e.target.closest(".cb-btn"); if (!b) return;
     if (b.dataset.t) select(b.dataset.t); else if (b.dataset.s) select(null, b.dataset.s);
-    else if (b.dataset.act === "night") setNight(!night); else if (b.dataset.act === "undo") undo(); else if (b.dataset.act === "redo") redo();
+    else if (b.dataset.act === "undo") undo(); else if (b.dataset.act === "redo") redo();
     else if (b.dataset.x != null) { const x = extraButtons[+b.dataset.x]; if (x && x.onClick) x.onClick(api); }
   });
   new ResizeObserver(resize).observe(corner); new ResizeObserver(resize).observe(popStage);
-  new MutationObserver(() => applyPalette()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  new MutationObserver(() => { refreshNight(); applyPalette(); }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   renderBar();
 }
 
@@ -530,7 +544,7 @@ function start() {
   corner = document.getElementById("corner");
   if (started || !corner || !corner.offsetWidth) return;
   started = true;
-  night = nightOverride === null ? autoNight() : nightOverride;
+  night = themeNight();
   initThree(); buildUI(); bindPointer(renderer.domElement);
   mount(corner.querySelector(".city-host")); load(); updateGhost();
   emit("ready", api);
@@ -541,11 +555,11 @@ function start() {
    CityGame.addButton({icon,title,onClick(api)})  在底部栏加按钮
    CityGame.on(事件, fn)            ready / place / remove / undo / redo / change / select / hover / night / expand / collapse / blocked / render / register
    CityGame.place(i,j[,t,s]) / remove(i,j) / undo() / redo() / clear()
-   CityGame.select(t,s) / setNight(true|false|null) / expand() / collapse()
+   CityGame.select(t,s,r) / expand() / collapse()
    CityGame.exportJSON() / importJSON(data)
    CityGame.three / scene / camera / renderer / cells / config / sizes / helpers */
 const api = {
-  registerFloor, addButton, on, off, place, remove, undo, redo, clear: clearCity, select, setNight, expand, collapse,
+  registerFloor, addButton, on, off, place, remove, undo, redo, clear: clearCity, select, expand, collapse, rotateBy,
   exportJSON, importJSON, config, sizes: SIZES, helpers, three: THREE,
   get floors() { return ORDER.map(id => FLOORS.get(id)); },
   get selected() { return Object.assign({}, sel); },
