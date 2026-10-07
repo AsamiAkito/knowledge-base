@@ -8,7 +8,7 @@
    · 右下角只能旋转和缩放；点左上角三角展开后才能编辑：
        空格   指着顶面 / 地面 → 往上盖一层；指着某层侧面 → 在该面加侧翼（长按连放）
        D      删掉指着的侧翼 / 连廊，否则删该格最上一层（长按连删）
-       T      指着一层按住，移到另一栋楼的某层松开 → 两层之间连一座连廊
+       T      指着一层按住，移到另一栋楼的某层松开 → 两层相对的面直接融合相连
        Q / E  选左 / 右一个楼层    W / S  尺寸增大 / 减小    R  顺时针旋转 15°
        Ctrl+Z 撤销   Ctrl+Shift+Z / Ctrl+Y 重做   Esc 收起
    · 每位访客的城市存在本机 localStorage
@@ -28,7 +28,6 @@ const config = {
   damping: .22,                                   // 旋转缓动（0–1，越大越跟手）
   recenterNear: 30,                               // 相机距离小于它时视野可移到棋盘任意位置，大于它逐步回中
   wingDepth: .32,                                 // 侧翼伸出的深度（格）
-  bridge: { width: .22, height: .16 },            // 连廊截面
   repeatDelay: 300, repeatEvery: 90               // 长按连放 / 连删的节奏（毫秒）
 };
 
@@ -78,7 +77,7 @@ const F = {   // 常用立面图案
   all: (...fns) => (w, h) => fns.flatMap(f => f(w, h))
 };
 /* 方盒四面的窗格（夜里亮灯）：cols 列，rows 为每行中心高度比例 */
-function boxPanes(w, h, { cols, rows = [.5], ph = .46, pr = .55, seed = 1, y0 = 0, lit = .72 } = {}) {
+function boxPanes(w, h, { cols, rows = [.5], ph = .6, pr = .55, seed = 1, y0 = 0, lit = .72 } = {}) {
   const r = rng(seed), pos = [], col = [];
   cols = cols || Math.max(2, Math.round(w / .17));
   const span = w * .82, cw = span / cols, pw = cw * pr, half = w / 2 + .005;
@@ -106,7 +105,7 @@ function roundPanes(rad, h, { count = 12, ph = .46, seed = 1, rows = [.5] } = {}
 /* ---------------- 楼层类型注册表 ----------------
    def = {
      id, name, icon(24×24 线条 SVG 字符串),
-     height: 数字 | (w)=>数字    层高（格），可按占地宽度 w 计算
+     height: 数字 | (w)=>数字    层高（格，默认 0.16 = 一排方格），可按占地宽度 w 计算
      cap: true                    封顶层：上面不能再盖，也不能当侧翼
      build({THREE,w,h,seed,helpers}) → { solid, lines?, panes?, autoEdges? }
        solid  实体几何（底面在 y=0，占地 w×w 居中）
@@ -120,7 +119,7 @@ function floorHeight(def, w) { return typeof def.height === "function" ? def.hei
 function registerFloor(def) {
   if (!def || !def.id || typeof def.build !== "function") throw new Error("registerFloor: 需要 id 和 build");
   if (!FLOORS.has(def.id)) ORDER.push(def.id);
-  FLOORS.set(def.id, Object.assign({ name: def.id, height: .32, cap: false, icon: "" }, def));
+  FLOORS.set(def.id, Object.assign({ name: def.id, height: .16, cap: false, icon: "" }, def));
   [...geoCache.keys()].forEach(k => { if (k.startsWith(def.id + "|")) geoCache.delete(k); });
   renderBar(); emit("register", def);
 }
@@ -139,37 +138,37 @@ const I = p => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strok
 const body = (id, name, icon, lineFn, paneOpt, extra = {}) => registerFloor(Object.assign({ id, name, icon,
   build: ({ w, h, seed }) => ({ solid: box(w, h), lines: lineFn ? facade(w, h, lineFn) : null, panes: paneOpt ? boxPanes(w, h, Object.assign({ seed }, paneOpt(w))) : null }) }, extra));
 body("grid", "网格幕墙", I('<rect x="5" y="4" width="14" height="16"/><path d="M8.5 4v16M12 4v16M15.5 4v16M5 9.3h14M5 14.6h14"/>'),
-  (w, h) => F.all(F.cols(Math.max(4, Math.round(w / .09))), F.rows([h * .5]))(w, h), w => ({ cols: Math.max(4, Math.round(w / .09)), rows: [.25, .75], ph: .4, pr: .8 }));
+  (w, h) => F.cols(Math.max(4, Math.round(w / .09)))(w, h), w => ({ cols: Math.max(4, Math.round(w / .09)), ph: .62, pr: .8 }));
 body("vfin", "竖向肋条", I('<rect x="5" y="4" width="14" height="16"/><path d="M7.3 4v16M9.6 4v16M11.9 4v16M14.2 4v16M16.5 4v16"/>'),
-  (w, h) => F.cols(Math.max(6, Math.round(w / .045)))(w, h), w => ({ cols: Math.max(3, Math.round(w / .14)), ph: .8, pr: .5 }));
+  (w, h) => F.cols(Math.max(6, Math.round(w / .045)))(w, h), w => ({ cols: Math.max(3, Math.round(w / .14)), ph: .7, pr: .5 }));
 body("louver", "横向百叶", I('<rect x="5" y="5" width="14" height="14"/><path d="M5 7.5h14M5 10h14M5 12.5h14M5 15h14M5 17.5h14"/>'),
-  F.hlines(6), w => ({ cols: Math.max(2, Math.round(w / .2)), ph: .3, pr: .8 }));
+  F.hlines(3), w => ({ cols: Math.max(2, Math.round(w / .2)), ph: .3, pr: .8 }));
 body("ribbon", "带形窗", I('<rect x="5" y="5" width="14" height="14"/><path d="M5 9h14M5 13h14"/><path d="M8 9v4M11 9v4M14 9v4M17 9v4"/>'),
-  (w, h) => F.all(F.rows([h * .3, h * .72]), F.cols(Math.max(3, Math.round(w / .12)), h * .3, h * .72))(w, h), w => ({ cols: Math.max(3, Math.round(w / .12)), ph: .38, pr: .82, rows: [.51] }));
+  (w, h) => F.all(F.rows([h * .25, h * .75]), F.cols(Math.max(3, Math.round(w / .12)), h * .25, h * .75))(w, h), w => ({ cols: Math.max(3, Math.round(w / .12)), ph: .46, pr: .82 }));
 body("window", "窗户层", I('<rect x="5" y="6" width="14" height="12"/><path d="M7.5 9h3v5h-3zM13.5 9h3v5h-3z"/>'),
-  (w, h) => F.windows(Math.max(2, Math.round(w / .17)))(w, h), w => ({ cols: Math.max(2, Math.round(w / .17)), ph: .5, pr: .5, rows: [.49] }));
+  (w, h) => F.windows(Math.max(2, Math.round(w / .17)), .2, .8)(w, h), w => ({ cols: Math.max(2, Math.round(w / .17)), ph: .58, pr: .5 }));
 body("diagrid", "斜交网格", I('<rect x="5" y="4" width="14" height="16"/><path d="M5 4l7 16M12 4 5 20M12 4l7 16M19 4l-7 16"/>'),
-  F.diag(2), w => ({ cols: 2, ph: .3, pr: .5 }));
+  F.diag(3), w => ({ cols: 3, ph: .4, pr: .45 }));
 body("curtain", "玻璃幕墙", I('<rect x="6" y="5" width="12" height="15"/><path d="M9 5v15M12 5v15M15 5v15M6 12h12"/>'),
-  (w, h) => F.all(F.cols(Math.max(4, Math.round(w / .1))), F.rows([h * .02]))(w, h), w => ({ cols: Math.max(4, Math.round(w / .1)), ph: .8, pr: .72 }));
-body("plain", "实墙层", I('<rect x="5" y="8" width="14" height="10"/><path d="M5 13h14"/>'), F.rows([.32 * .5]), null);
-registerFloor({ id: "podium", name: "裙楼大板", height: .5, icon: I('<rect x="3" y="7" width="18" height="12"/><path d="M3 13h18M9 7v12M15 7v12"/><circle cx="12" cy="10" r="1.6"/>'),
+  (w, h) => F.cols(Math.max(5, Math.round(w / .07)))(w, h), w => ({ cols: Math.max(5, Math.round(w / .07)), ph: .8, pr: .78 }));
+body("plain", "实墙层", I('<rect x="5" y="8" width="14" height="10"/>'), null, null);
+registerFloor({ id: "podium", name: "裙楼大板", height: .32, icon: I('<rect x="3" y="7" width="18" height="12"/><path d="M3 13h18M9 7v12M15 7v12"/><circle cx="12" cy="10" r="1.6"/>'),
   build: ({ w, h, seed }) => {
-    const L = facade(w, h, F.all(F.cols(3), F.rows([h * .5]), F.cols(9, 0, h * .5)));
-    const c = [], r = h * .14, cx = 0, cy = h * .76, z = w / 2 + .004;     // 正面一个圆窗（参考图里的裙楼）
+    const L = facade(w, h, F.cols(3));
+    const c = [], r = h * .26, cx = 0, cy = h * .5, z = w / 2 + .004;      // 正面一个圆窗（参考图里的裙楼）
     for (let i = 0; i < 24; i++) { const a = i / 24 * Math.PI * 2, b = (i + 1) / 24 * Math.PI * 2; c.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r, z], [cx + Math.cos(b) * r, cy + Math.sin(b) * r, z]); }
-    return { solid: box(w, h), lines: merge([L, lines(c)]), panes: boxPanes(w, h, { seed, cols: 9, rows: [.25], ph: .38, pr: .8 }) };
+    return { solid: box(w, h), lines: merge([L, lines(c)]), panes: boxPanes(w, h, { seed, cols: 3, ph: .7, pr: .8 }) };
   } });
 registerFloor({ id: "setback", name: "收分层", icon: I('<rect x="8" y="8" width="8" height="10"/><path d="M5 18h14M10 8v10M12 8v10M14 8v10"/>'),
   build: ({ w, h, seed }) => { const s = w * .72; return { solid: box(s, h), lines: facade(s, h, F.cols(Math.max(3, Math.round(s / .07)))), panes: boxPanes(s, h, { seed, cols: Math.max(3, Math.round(s / .14)), ph: .7 }) }; } });
 registerFloor({ id: "round", name: "圆形层", icon: I('<ellipse cx="12" cy="7" rx="6" ry="2"/><path d="M6 7v10a6 2 0 0 0 12 0V7"/><path d="M6 11.5a6 2 0 0 0 12 0"/>'),
   build: ({ w, h, seed }) => {
     const r = w / 2, g = new THREE.CylinderGeometry(r, r, h, 32); g.translate(0, h / 2, 0);
-    const p = [...ring(r + .002, 0), ...ring(r + .002, h), ...ring(r + .002, h * .5)];
+    const p = [...ring(r + .002, 0), ...ring(r + .002, h)];
     for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; p.push([Math.cos(a) * (r + .002), 0, Math.sin(a) * (r + .002)], [Math.cos(a) * (r + .002), h, Math.sin(a) * (r + .002)]); }
-    return { solid: g, lines: lines(p), autoEdges: false, panes: roundPanes(r, h, { seed, count: 16, rows: [.27, .73], ph: .36 }) };
+    return { solid: g, lines: lines(p), autoEdges: false, panes: roundPanes(r, h, { seed, count: 16, ph: .6 }) };
   } });
-registerFloor({ id: "roofbox", name: "屋顶设备", height: .16, icon: I('<path d="M4 17h16"/><rect x="9" y="12" width="6" height="5"/><path d="M11 12v5M13 12v5"/>'),
+registerFloor({ id: "roofbox", name: "屋顶设备", height: .12, icon: I('<path d="M4 17h16"/><rect x="9" y="12" width="6" height="5"/><path d="M11 12v5M13 12v5"/>'),
   build: ({ w, h }) => ({ solid: merge([box(w * .92, .03), box(w * .34, h - .03, w * .34, .03, w * .15, -w * .12)]) }) });
 registerFloor({ id: "parapet", name: "平顶女儿墙", cap: true, height: .12, icon: I('<path d="M4 16h16v-3H4zM6 13v-2h12v2"/>'),
   build: ({ w, h }) => ({ solid: merge([box(w, .04), box(w, h - .04, .03, .04, 0, w / 2 - .015), box(w, h - .04, .03, .04, 0, -w / 2 + .015), box(.03, h - .04, w, .04, w / 2 - .015), box(.03, h - .04, w, .04, -w / 2 + .015)]) }) });
@@ -223,7 +222,7 @@ function initThree() {
   camera = new THREE.PerspectiveCamera(config.fov, 2, .1, 6000);
   hemi = new THREE.HemisphereLight(0xffffff, 0xdedeea, 2.9); scene.add(hemi);
   sun = new THREE.DirectionalLight(0xffffff, .5); sun.position.set(-1, 2.2, .7); scene.add(sun);
-  faceMat = new THREE.MeshLambertMaterial({ color: 0xffffff, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+  faceMat = new THREE.MeshLambertMaterial({ color: 0xffffff, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
   lineMat = new THREE.LineBasicMaterial({ color: 0x2c2e36 });
   paneMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
   ghostFace = new THREE.MeshBasicMaterial({ color: 0x0e8fbc, transparent: true, opacity: .16, depthWrite: false });
@@ -381,27 +380,43 @@ function detachWing(i, j, k, d) {
   const w = f.wings.splice(n, 1)[0]; f.obj.remove(w.obj); dispose(w.obj);
   return { d: w.d, t: w.t, s: w.s, v: w.v };
 }
-/* 连廊：两层楼中段之间的一段方管，高度不同时自动倾斜 */
+/* 连接体：取两层楼相对的那两个面，按各自面的大小放样相连（大小、高度不同时自然过渡） */
 function floorCenter(i, j, k) {
   const f = stackOf(i, j)[k]; if (!f) return null;
   return new THREE.Vector3(f.obj.position.x, f.obj.position.y + f.h / 2, f.obj.position.z);
 }
-function bridgeGeo(pa, pb) {
-  const len = pa.distanceTo(pb), { width: bw, height: bh } = config.bridge;
-  const solid = new THREE.BoxGeometry(len, bh, bw), p = [];
-  const n = Math.max(2, Math.round(len / .25));
-  for (let s = 0; s <= n; s++) { const x = -len / 2 + s * len / n; [-1, 1].forEach(z => p.push([x, -bh / 2, z * (bw / 2 + .002)], [x, bh / 2, z * (bw / 2 + .002)])); }
-  return { solid, edges: merge([new THREE.EdgesGeometry(solid), lines(p)]), panes: null };
+/* 某层朝向 toward（世界坐标点）的那个面：返回四角 [左下, 右下, 右上, 左上]（世界坐标） */
+function faceToward(i, j, k, toward) {
+  const f = stackOf(i, j)[k]; if (!f) return null;
+  const g = floorGeo(f.t, f.s, f.v); if (!g.solid.boundingBox) g.solid.computeBoundingBox();
+  const bb = g.solid.boundingBox, hx = Math.max(Math.abs(bb.min.x), bb.max.x), hz = Math.max(Math.abs(bb.min.z), bb.max.z);
+  f.obj.updateMatrixWorld(true);
+  const local = f.obj.worldToLocal(toward.clone());
+  let best = 0, bd = -Infinity;
+  FACES.forEach(([nx, nz], d) => { const v = nx * local.x + nz * local.z; if (v > bd) { bd = v; best = d; } });
+  const [nx, nz] = FACES[best], tx = -nz, tz = nx, hn = nx ? hx : hz, ht = nx ? hz : hx;
+  return [[-1, 0], [1, 0], [1, f.h], [-1, f.h]].map(([s2, y]) => f.obj.localToWorld(new THREE.Vector3(nx * hn + tx * ht * s2, y, nz * hn + tz * ht * s2)));
 }
-function placeBridgeObj(obj, pa, pb) {
-  obj.position.copy(pa).add(pb).multiplyScalar(.5);
-  obj.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), pb.clone().sub(pa).normalize());
+function linkGeo(a, b) {
+  const ca = floorCenter(...a), cb = floorCenter(...b);
+  const A = faceToward(...a, cb), B0 = faceToward(...b, ca); if (!A || !B0) return null;
+  /* 两端四角配对：B 的左右与 A 相反时交换，取总距离最短的配法 */
+  const sw = [B0[1], B0[0], B0[3], B0[2]], dist = Q => Q.reduce((s2, p, n) => s2 + p.distanceTo(A[n]), 0), B = dist(B0) <= dist(sw) ? B0 : sw;
+  const quads = [[0, 1], [1, 2], [2, 3], [3, 0]], pos = [];
+  quads.forEach(([m, n]) => { [A[m], A[n], B[n], A[m], B[n], B[m]].forEach(p => pos.push(p.x, p.y, p.z)); });
+  const solid = new THREE.BufferGeometry(); solid.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); solid.computeVertexNormals();
+  const L = [];
+  for (let n = 0; n < 4; n++) L.push([A[n].x, A[n].y, A[n].z], [B[n].x, B[n].y, B[n].z]);                 // 四条长边
+  const span = Math.max(A[0].distanceTo(B[0]), .01), cnt = Math.max(1, Math.round(span / .09));             // 两侧立面竖线，延续楼的线稿
+  for (let q = 1; q < cnt; q++) { const t = q / cnt;
+    [[0, 3], [1, 2]].forEach(([lo, hi]) => { const p1 = A[lo].clone().lerp(B[lo], t), p2 = A[hi].clone().lerp(B[hi], t); L.push([p1.x, p1.y, p1.z], [p2.x, p2.y, p2.z]); }); }
+  return { solid, edges: lines(L), panes: null };
 }
 function addBridge(a, b) {
   const pa = floorCenter(...a), pb = floorCenter(...b); if (!pa || !pb) return null;
   if (bridges.some(x => (sameF(x.a, a) && sameF(x.b, b)) || (sameF(x.a, b) && sameF(x.b, a)))) return null;
-  const rec = { a: a.slice(), b: b.slice() };
-  rec.obj = meshSet(bridgeGeo(pa, pb), { kind: "bridge", ref: rec }); placeBridgeObj(rec.obj, pa, pb);
+  const rec = { a: a.slice(), b: b.slice() }, g = linkGeo(a, b); if (!g) return null;
+  rec.obj = meshSet(g, { kind: "bridge", ref: rec });
   bridgeGroup.add(rec.obj); bridges.push(rec); return rec;
 }
 function dropBridge(rec) { const n = bridges.indexOf(rec); if (n >= 0) bridges.splice(n, 1); bridgeGroup.remove(rec.obj); dispose(rec.obj); }
