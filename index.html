@@ -1560,7 +1560,11 @@ async function publish(){
     else{const e=await put.json().catch(()=>({}));toast("发布失败："+(e.message||put.status));}
   }catch(e){toast("发布出错："+e.message);}
 }
-function exportData(){return {version:1,profile:DATA.profile,feed:DATA.feed,kb:DATA.kb,fav:DATA.fav,photos:DATA.photos||[],contacts:DATA.contacts||[]};}
+function exportData(){
+  /* 城市：本机已加载右下角城市时取当前城市（带新版本号），否则沿用线上那份 */
+  let city=DATA.city;try{if(window.CityGame&&CityGame.started)city=CityGame.publishJSON();}catch(e){}
+  const o={version:1,profile:DATA.profile,feed:DATA.feed,kb:DATA.kb,fav:DATA.fav,photos:DATA.photos||[],contacts:DATA.contacts||[]};
+  if(city)o.city=city;return o;}
 function doExport(){const blob=new Blob([JSON.stringify(exportData(),null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="data.json";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);toast("已导出 data.json");}
 
 function modal(html){const bg=document.createElement("div");bg.className="modal-bg";bg.innerHTML='<div class="modal">'+html+'</div>';document.body.appendChild(bg);bg.addEventListener("click",e=>{if(e.target===bg)closeEl(bg);});return bg;}
@@ -2213,7 +2217,8 @@ function openSearch(){
 }
 document.addEventListener("keydown",e=>{
   const typing=e.target.closest&&e.target.closest("input,textarea,select,[contenteditable]");
-  if(((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k")||(e.key==="/"&&!typing&&!e.ctrlKey&&!e.metaKey)){e.preventDefault();openSearch();}
+  if(((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k")||(e.key==="/"&&!typing&&!e.ctrlKey&&!e.metaKey)){e.preventDefault();openSearch();return;}
+  if(e.code==="Backquote"&&!typing&&!e.ctrlKey&&!e.metaKey&&!e.altKey){e.preventDefault();applyTheme(document.documentElement.getAttribute("data-theme")==="dark"?"light":"dark");}
 });
 
 /* ---------- 网址路由：#/feed  #/post/<id>  #/kb/<id>  #/fav/<夹>/<项>  —— 可分享、可后退 ---------- */
@@ -2271,5 +2276,5 @@ boot();
 
 <!-- 右下角小游戏：线条城市（three.js 本地文件） -->
 <script type="importmap">{"imports":{"three":"./assets/vendor/three.module.min.js"}}</script>
-<script type="module" src="assets/city.js?v=20261007p"></script>
+<script type="module" src="assets/city.js?v=20261007q"></script>
 

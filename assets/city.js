@@ -34,10 +34,12 @@ const config = {
   damping: .22,                                   // 旋转缓动（0–1，越大越跟手）
   recenterNear: 30,                               // 相机距离小于它时视野可移到棋盘任意位置，大于它逐步回中
   thickness: 3,                                   // 棋盘厚度（格）
-  digLevel: .16, digMax: 3, raiseMax: 120,         // 地面每层高度（= 一层楼高）、最多下挖 / 升高几层
+  digLevel: .16, digMax: 3, raiseMax: 300,         // 地面每层高度（= 一层楼高）、最多下挖 / 升高几层（山可以比最高的楼还高）
   terrainBand: 40,                                // 随机地形只在离边缘这么多格以内，越靠边越高
   wingDepth: .32,                                 // 侧翼伸出的深度（格）
-  repeatDelay: 300, repeatEvery: 90               // 长按连放 / 连删的节奏（毫秒）
+  repeatDelay: 300, repeatEvery: 90,              // 长按连放 / 连删的节奏（毫秒）
+  dayMinutes: 24,                                 // 现实多少分钟是城里的一天
+  carsPer: 26, carsMax: 60                        // 每多少格街道一辆车、最多几辆
 };
 
 /* 界面元素（注册内置楼层前声明，renderBar 会用到） */
@@ -307,10 +309,16 @@ registerTemplate({ id: "random", name: "随机城市楼", icon: IT('<rect x="5" 
     const cap = pickR(["parapet", "crown", "spire", "antenna", "dome", "roofbox", null]); if (cap) p.add(0, 0, cap, 1, "S");
     return p; } });
 
-/* ---------------- 配色：白天 = 网页亮色主题，夜晚 = 网页暗色主题 ---------------- */
+/* ---------------- 配色：白天 / 夜晚两套，按城里的时间在两者之间渐变 ---------------- */
 function palette(night) {
   if (night) return { tLine: 0x596080, tLow: 0x1d2030, tHigh: 0x343a52, tWall: 0x151722, tPit: 0x171925, gLow: 0x1e2e24, gHigh: 0x2f4a35, water: 0x1b3045, waterFall: 0x24405a, road: 0x272a37, face: 0x22252f, line: 0x7d84a0, ground: 0x1d2030, side: 0x181a26, side2: 0x151721, minor: 0x272b3c, major: 0x333850, sky: 0x9aa0c0, gnd: 0x1a1c28, ambient: 1.6, sun: .6, clear: 0x13141b };
   return { tLine: 0x9a9cad, tLow: 0xfbfbfd, tHigh: 0xb4b7c7, tWall: 0xcfd0dc, tPit: 0xe4e4ec, gLow: 0xd9e8cb, gHigh: 0x9fbb8a, water: 0xcfe3ef, waterFall: 0xb7d2e4, road: 0xebebf0, face: 0xffffff, line: 0x2c2e36, ground: 0xfcfcfd, side: 0xececf2, side2: 0xe1e1ea, minor: 0xececf2, major: 0xdadae4, sky: 0xffffff, gnd: 0xdedeea, ambient: 2.9, sun: .5, clear: 0xf6f6f4 };
+}
+
+function blendPalette(t) {
+  const a = palette(false), b = palette(true), o = {};
+  for (const k in a) o[k] = k === "ambient" || k === "sun" ? a[k] + (b[k] - a[k]) * t : new THREE.Color(a[k]).lerp(new THREE.Color(b[k]), t).getHex();
+  return o;
 }
 
 /* ---------------- 状态 ----------------
@@ -322,6 +330,7 @@ const cells = new Map(), bridges = [], terrain = new Map();   // terrain: "i,j" 
 const hist = [], redoStack = [];
 let sel = Object.assign({ t: "grid", s: "M", r: 0 }, (() => { try { return JSON.parse(localStorage.getItem(KEY_SEL)) || {}; } catch (e) { return {}; } })());
 if (!FLOORS.has(sel.t)) sel.t = "grid";
+const paneLight = { value: 0 }; let paneVis = null;
 let night = false, hover = null, expanded = false, tAnchor = null, drag = null;
 
 /* ---------------- three.js 场景 ---------------- */
@@ -341,6 +350,11 @@ function initThree() {
   lineMat = new THREE.LineBasicMaterial({ color: 0x2c2e36 });
   facadeMat = new THREE.LineBasicMaterial({ color: 0x2c2e36, transparent: true });
   paneMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  paneMat.onBeforeCompile = sh => {
+    sh.uniforms.uLight = paneLight;
+    sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nattribute float lit;\nvarying float vLit;").replace("#include <begin_vertex>", "#include <begin_vertex>\nvLit = lit;");
+    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nuniform float uLight;\nvarying float vLit;").replace("void main() {", "void main() {\n  if (vLit > uLight) discard;");
+  };
   ghostFace = new THREE.MeshBasicMaterial({ color: 0x0e8fbc, transparent: true, opacity: .16, depthWrite: false });
   ghostLine = new THREE.LineBasicMaterial({ color: 0x0e8fbc, transparent: true, opacity: .9 });
   hiLine = new THREE.LineBasicMaterial({ color: 0xc0344d });
@@ -371,6 +385,7 @@ function initThree() {
   gridMajor = new THREE.LineSegments(lines(ma), maskLines(new THREE.LineBasicMaterial({ color: 0xdadae4 }), M));
   scene.add(ground, new THREE.LineSegments(new THREE.EdgesGeometry(gGeo), lineMat), gridMinor, gridMajor);
   floorsGroup = new THREE.Group(); bridgeGroup = new THREE.Group(); bakeGroup = new THREE.Group(); scene.add(floorsGroup, bridgeGroup, bakeGroup);
+  initCars();
 
   hoverBox = new THREE.LineLoop(lines([[-.5, 0, -.5], [.5, 0, -.5], [.5, 0, .5], [-.5, 0, .5]]), new THREE.LineBasicMaterial({ color: 0x0e8fbc }));
   hoverBox.visible = false; scene.add(hoverBox);
@@ -400,6 +415,8 @@ function initThree() {
       if (panKeys.has("d")) { mx += -fz; mz += fx; } if (panKeys.has("a")) { mx -= -fz; mz -= fx; }
       if (mx || mz) { cam.tx += mx * sp; cam.tz += mz * sp; orbit = null; updateCamera(); }
     }
+    if (now - (loop.ck || 0) > 500) { loop.ck = now; updateClock(); }
+    if (host && !document.hidden && (expanded || cityVisible) && now - carLast >= (expanded ? 0 : 50)) { stepCars(Math.min(.1, (now - carLast) / 1000)); carLast = now; }
     if (dirtyCells.size) { dirtyCells.forEach(bakeCell); dirtyCells.clear(); }
     if (fadeDirty) { fadeDirty = false; updateFade(); }
     if (!needs || !host) return; needs = false; fadeGrid(); renderer.render(scene, camera); emit("render");
@@ -420,9 +437,9 @@ function maskLines(mat, M) {
    相邻同高的格子共面相连，所以整块地形中间没有缝线 */
 function rebuildTerrain() {
   const M = N + 2, data = digMask.image.data, L = config.digLevel, tri = [], col = [], gtri = [], gcol = [], wtri = [], wcol = [], wav = [];
-  const p = palette(night), C = h => new THREE.Color(h), cLow = C(p.tLow), cHigh = C(p.tHigh), cWall = C(p.tWall), cPit = C(p.tPit),
+  const p = palette(false), C = h => new THREE.Color(h), cLow = C(p.tLow), cHigh = C(p.tHigh), cWall = C(p.tWall), cPit = C(p.tPit),
     gLow = C(p.gLow), gHigh = C(p.gHigh), cWater = C(p.water), cFall = C(p.waterFall), top = config.raiseMax;
-  terrainNight = night; data.fill(255);
+  data.fill(255);
   const quad = (T, Cc, c, a, b, cc, d) => { T.push(...a, ...b, ...cc, ...a, ...cc, ...d); for (let q = 0; q < 6; q++) Cc.push(c.r, c.g, c.b); };
   const wsurf = (i, j) => levelOf(i, j) * L + .09;                                                // 水面比河床高一点
   const NB = (i, j, x0, x1, z0, z1) => [[i + 1, j, x1, z0, x1, z1], [i - 1, j, x0, z1, x0, z0], [i, j + 1, x1, z1, x0, z1], [i, j - 1, x0, z0, x1, z0]];
@@ -462,23 +479,28 @@ function rebuildTerrain() {
   const g = mk(tri, col, true);
   pitMesh.geometry.dispose(); pitMesh.geometry = g;
   pitEdges.geometry.dispose(); pitEdges.geometry = tri.length ? new THREE.EdgesGeometry(g, 30) : new THREE.BufferGeometry();
-  req();
+  carDirty = true; req();
 }
 function accent() { return getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#0e8fbc"; }
 function applyPalette() {
-  const p = palette(night);
+  const p = blendPalette(dark), W = new THREE.Color(0xffffff);
   faceMat.color.setHex(p.face); lineMat.color.setHex(p.line); facadeMat.color.setHex(p.line);
   groundTop.material.color.setHex(p.ground); roadMat.color.setHex(p.road); terrainLine.color.setHex(p.tLine);
-  if (terrainNight !== night) rebuildTerrain();                   // 地形顶点色跟昼夜走，只在切换时重算
+  /* 地形顶点色按白天算一次，入夜时整体乘一层暗色，不必重算 */
+  grassMesh.material.color.copy(W).lerp(new THREE.Color(0x2a3048), dark); waterMesh.material.color.copy(grassMesh.material.color);
+  pitMat.color.copy(W).lerp(new THREE.Color(0x4a5270), dark);
   [0, 1].forEach(k => ground.material[k].color.setHex(p.side)); [3, 4, 5].forEach(k => ground.material[k].color.setHex(p.side2));
   gridMinor.material.color.setHex(p.minor); gridMajor.material.color.setHex(p.major);
   hemi.color.setHex(p.sky); hemi.groundColor.setHex(p.gnd); hemi.intensity = p.ambient; sun.intensity = p.sun;
   const a = new THREE.Color(accent());
   [hoverBox.material, ghostFace, ghostLine, pivot.children[0].material, linkLine.material].forEach(m => m.color.copy(a));
-  renderer.setClearColor(p.clear, expanded ? 1 : 0);
-  scene.traverse(o => { if (o.userData.pane) o.visible = night; });
-  faded.forEach(k => { const g = baked.get(k); if (g) g.children.forEach(o => { if (o.userData.pane) o.visible = false; }); }); fadeDirty = true;     // 白天纯线稿，夜里窗格亮灯
-  if (pop) pop.classList.toggle("night", night);
+  renderer.setClearColor(p.clear, 0);                                    // 棋盘外是云海背景图
+  paneLight.value = light;
+  if (paneVis !== night) { paneVis = night;                               // 白天纯线稿，入夜窗格陆续亮灯
+    scene.traverse(o => { if (o.userData.pane) o.visible = night; });
+    faded.forEach(k => { const g = baked.get(k); if (g) g.children.forEach(o => { if (o.userData.pane) o.visible = false; }); }); fadeDirty = true; }
+  if (carLamps) carLamps.visible = dark > .55;                            // 车灯一次全开
+  if (pop) pop.classList.toggle("night", themeNight());
   req();
 }
 function fadeGrid() {
@@ -598,6 +620,12 @@ function refreshSeams(i, j) {
    单层对象保留但不显示，只用于拾取。某格有改动就标脏，下一帧重新合并这一格 ---------- */
 const dirtyCells = new Set(), baked = new Map();
 function markDirty(i, j) { dirtyCells.add(K(i, j)); req(); }
+function litAttr(g) {                                     // 每扇窗（6 个顶点）按位置取一个 0–1 的亮灯阈值
+  const p = g.attributes.position.array, n = p.length / 3, a = new Float32Array(n);
+  for (let v = 0; v < n; v += 6) { const x = Math.sin(p[v * 3] * 12.9898 + p[v * 3 + 1] * 78.233 + p[v * 3 + 2] * 37.719) * 43758.5453, t = .03 + (x - Math.floor(x)) * .96;
+    for (let q = v; q < Math.min(n, v + 6); q++) a[q] = t; }
+  g.setAttribute("lit", new THREE.BufferAttribute(a, 1));
+}
 function bakeCell(key) {
   const old = baked.get(key); if (old) { bakeGroup.remove(old); old.traverse(o => { if (o.geometry) o.geometry.dispose(); }); baked.delete(key); }
   const [i, j] = key.split(",").map(Number), st = stackOf(i, j); if (!st.length) return;
@@ -619,7 +647,7 @@ function bakeCell(key) {
   add(B.solid, g => new THREE.Mesh(g, faceMat));
   add(B.outline, g => new THREE.LineSegments(g, lineMat));
   add(B.facade, g => new THREE.LineSegments(g, facadeMat));
-  add(B.panes, g => { const m = new THREE.Mesh(g, paneMat); m.userData.pane = true; m.visible = night; return m; });
+  add(B.panes, g => { litAttr(g); const m = new THREE.Mesh(g, paneMat); m.userData.pane = true; m.visible = night; return m; });
   grp.userData.box = new THREE.Box3().setFromObject(grp); grp.userData.key = key;
   bakeGroup.add(grp); baked.set(key, grp); fadeDirty = true;
 }
@@ -832,10 +860,93 @@ function removeBlock(b) {                                 // 删这一列最上�
   const d = bdata(top); dropBlock(top); record({ op: "block-", b: d }); changed(); emit("unblock", d); return true;
 }
 
+/* ---------------- 车辆：从断头路尽头出现，沿街道开到另一条断头路的尽头消失，消失一辆补一辆；
+   数量与街道格数成正比。只在城市可见时运动：右下角约 20 帧，展开后满帧，页面在后台时暂停 ---------------- */
+const cars = []; let carMesh, carLines, carLamps, carDirty = true, carEnds = [], carLast = 0, cityVisible = true;
+const CAR = (() => {                                                 // 车身 + 车顶两只盒子，车头朝 +x
+  const b1 = new THREE.BoxGeometry(.3, .07, .15); b1.translate(0, .055, 0);
+  const b2 = new THREE.BoxGeometry(.15, .055, .12); b2.translate(-.03, .1175, 0);
+  const fg = merge([b1, b2]), eg = merge([new THREE.EdgesGeometry(b1), new THREE.EdgesGeometry(b2)]), lamp = [], lc = [];
+  [[.151, [1, .9, .55]], [-.151, [1, .28, .22]]].forEach(([x, c]) => [-.045, .045].forEach(z => {
+    const P = (a, b) => [x, .055 + b * .018, z + a * .022];
+    [P(-1, -1), P(1, -1), P(1, 1), P(-1, -1), P(1, 1), P(-1, 1)].forEach(v => { lamp.push(...v); lc.push(...c); }); }));
+  return { face: fg.attributes.position.array, norm: fg.attributes.normal.array, edge: eg.attributes.position.array, lamp: new Float32Array(lamp), lampCol: lc };
+})();
+function initCars() {
+  const M = config.carsMax, dyn = (n, size = 3) => new THREE.BufferAttribute(new Float32Array(n), size).setUsage(THREE.DynamicDrawUsage);
+  let g = new THREE.BufferGeometry(); g.setAttribute("position", dyn(CAR.face.length * M)); g.setAttribute("normal", dyn(CAR.norm.length * M));
+  carMesh = new THREE.Mesh(g, faceMat);
+  g = new THREE.BufferGeometry(); g.setAttribute("position", dyn(CAR.edge.length * M)); carLines = new THREE.LineSegments(g, lineMat);
+  g = new THREE.BufferGeometry(); g.setAttribute("position", dyn(CAR.lamp.length * M));
+  const col = new Float32Array(CAR.lamp.length * M); for (let q = 0; q < M; q++) col.set(CAR.lampCol, q * CAR.lamp.length); g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  carLamps = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })); carLamps.visible = false;
+  [carMesh, carLines, carLamps].forEach(o => { o.frustumCulled = false; o.geometry.setDrawRange(0, 0); scene.add(o); });
+}
+function hpush(h, x) { h.push(x); let q = h.length - 1; while (q) { const p = (q - 1) >> 1; if (h[p][0] <= h[q][0]) break; [h[p], h[q]] = [h[q], h[p]]; q = p; } }
+function hpop(h) { const top = h[0], last = h.pop(); if (h.length) { h[0] = last; let q = 0; for (;;) { const a = q * 2 + 1, b = a + 1; let m = q;
+  if (a < h.length && h[a][0] < h[m][0]) m = a; if (b < h.length && h[b][0] < h[m][0]) m = b; if (m === q) break; [h[m], h[q]] = [h[q], h[m]]; q = m; } } return top; }
+/* 从某个尽头出发，边权随机的最短路：每辆车走的路线都不太一样 */
+function route(start) {
+  const dist = new Map([[start, 0]]), prev = new Map(), heap = [[0, start]];
+  while (heap.length) { const [d, k] = hpop(heap); if (d > dist.get(k)) continue;
+    roadNb(k).forEach(n => { const nd = d + .5 + Math.random() * 1.5; if (!dist.has(n) || nd < dist.get(n)) { dist.set(n, nd); prev.set(n, k); hpush(heap, [nd, n]); } }); }
+  const goals = carEnds.filter(e => e !== start && dist.has(e)); if (!goals.length) return null;
+  let k = goals[Math.floor(Math.random() * goals.length)]; const path = [k];
+  while (k !== start) { k = prev.get(k); path.push(k); }
+  return path.reverse();
+}
+function lanePoints(path) {                                          // 靠右行驶：车道中心偏到前进方向右侧
+  const L = config.digLevel, ij = k => k.split(",").map(Number), dir = (a, b) => { const p = ij(a), q = ij(b); return [q[0] - p[0], q[1] - p[1]]; };
+  return path.map((k, q) => {
+    const [i, j] = ij(k), a = q > 0 ? dir(path[q - 1], k) : dir(k, path[q + 1]), b = q < path.length - 1 ? dir(k, path[q + 1]) : a;
+    const same = a[0] === b[0] && a[1] === b[1], rx = -a[1] - (same ? 0 : b[1]), rz = a[0] + (same ? 0 : b[0]);
+    return [i - HALF + .5 + rx * .2, roadLevel(i, j) * L + .003, j - HALF + .5 + rz * .2];
+  });
+}
+function spawnCar(mid) {
+  const start = carEnds[Math.floor(Math.random() * carEnds.length)];
+  if (!mid && cars.some(c => c.path[0] === start && c.s < 1.2)) return false;     // 同一路口刚出来一辆，等它开远
+  const path = route(start); if (!path || path.length < 3) return false;
+  const pts = lanePoints(path), c = { path, pts, len: pts.length - 1, v: 1 + Math.random() * .9, s: 0 };
+  if (mid) c.s = Math.random() * c.len * .95;
+  cars.push(c); return true;
+}
+function stepCars(dt) {
+  if (carDirty) { carDirty = false; carEnds = deadEnds();
+    for (let q = cars.length - 1; q >= 0; q--) if (cars[q].path.some(k => !roads.has(k))) cars.splice(q, 1); }
+  const want = carEnds.length < 2 ? 0 : Math.min(config.carsMax, Math.round(roads.size / config.carsPer));
+  if (cars.length > want) cars.length = want;
+  const first = !cars.length;
+  for (let n = 0; cars.length < want && n < (first ? want * 2 : 2); n++) spawnCar(first);
+  for (let q = cars.length - 1; q >= 0; q--) { const c = cars[q]; c.s += c.v * dt; if (c.s >= c.len) cars.splice(q, 1); }
+  drawCars();
+}
+let carDrawn = 0;
+function drawCars() {
+  if (!cars.length && !carDrawn) return; carDrawn = cars.length;
+  const fp = carMesh.geometry.attributes.position, fn = carMesh.geometry.attributes.normal, ep = carLines.geometry.attributes.position, lp = carLamps.geometry.attributes.position;
+  const put = (src, dst, off, x, y, z, cs, sn, sc, isN) => {
+    for (let v = 0; v < src.length; v += 3) { const lx = src[v], ly = src[v + 1], lz = src[v + 2];
+      dst[off + v] = (isN ? 0 : x) + (lx * cs - lz * sn) * (isN ? 1 : sc); dst[off + v + 1] = (isN ? 0 : y) + ly * (isN ? 1 : sc); dst[off + v + 2] = (isN ? 0 : z) + (lx * sn + lz * cs) * (isN ? 1 : sc); } };
+  cars.forEach((c, q) => {
+    const s = Math.min(c.len - 1e-6, c.s), a = Math.floor(s), t = s - a, A = c.pts[a], B = c.pts[a + 1];
+    const seg = (m) => { const P = c.pts[m], Q = c.pts[m + 1]; return P && Q ? [Q[0] - P[0], Q[2] - P[2]] : null; };
+    let [hx, hz] = seg(a); const nx = t > .7 ? seg(a + 1) : t < .3 ? seg(a - 1) : null;          // 路口转弯时车头平滑转向
+    if (nx) { const w = t > .7 ? (t - .7) / .6 : (.3 - t) / .6; hx += (nx[0] - hx) * w; hz += (nx[1] - hz) * w; }
+    const hl = Math.hypot(hx, hz) || 1, cs = hx / hl, sn = hz / hl, sc = Math.max(.01, Math.min(1, c.s / .5, (c.len - c.s) / .5));   // 出现 / 消失时缩放
+    const x = A[0] + (B[0] - A[0]) * t, y = A[1] + (B[1] - A[1]) * t, z = A[2] + (B[2] - A[2]) * t;
+    put(CAR.face, fp.array, q * CAR.face.length, x, y, z, cs, sn, sc); put(CAR.norm, fn.array, q * CAR.norm.length, 0, 0, 0, cs, sn, 1, true);
+    put(CAR.edge, ep.array, q * CAR.edge.length, x, y, z, cs, sn, sc); put(CAR.lamp, lp.array, q * CAR.lamp.length, x, y, z, cs, sn, sc);
+  });
+  [[carMesh, CAR.face, [fp, fn]], [carLines, CAR.edge, [ep]], [carLamps, CAR.lamp, [lp]]].forEach(([o, src, attrs]) => {
+    o.geometry.setDrawRange(0, cars.length * src.length / 3); attrs.forEach(at => { at.needsUpdate = true; }); });
+  req();
+}
+
 /* ---------------- 编辑操作（都进撤销栈） ---------------- */
 let grouping = null;
 function group(fn) { grouping = []; try { fn(); } finally { const g = grouping; grouping = null; if (g.length) record({ op: "group", list: g }); } changed(); }
-function record(a) { seeded = 0; if (grouping) { grouping.push(a); return; } hist.push(a); redoStack.length = 0; if (hist.length > 2000) hist.splice(0, hist.length - 2000); }
+function record(a) { seeded = 0; edited = 1; if (grouping) { grouping.push(a); return; } hist.push(a); redoStack.length = 0; if (hist.length > 2000) hist.splice(0, hist.length - 2000); }
 function place(i, j, t = sel.t, s = sel.s, r = sel.r, v, z = 1) {
   if (!FLOORS.has(t) || !SIZES[s]) return false;
   if (!canPlace(i, j)) { emit("blocked", { i, j }); return false; }
@@ -871,7 +982,7 @@ function rebuildRoads() {
       [[.08, .22], [.32, .46]].forEach(([u0, u1]) => mark.push(cx + a * u0, y, cz + b * u0, cx + a * u1, y, cz + b * u1)); });
   });
   const set = (obj, arr) => { obj.geometry.dispose(); const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(arr, 3)); obj.geometry = g; };
-  set(roadMesh, tri); set(roadLines, mark); set(roadEdge, edge); req();
+  set(roadMesh, tri); set(roadLines, mark); set(roadEdge, edge); carDirty = true; req();
 }
 function addRoad(i, j) {
   if (!inBoard(i, j) || roads.has(K(i, j)) || stackOf(i, j).length) { emit("blocked", { i, j }); return false; }
@@ -881,6 +992,39 @@ function removeRoad(i, j) {
   if (!roads.delete(K(i, j))) return false; rebuildRoads(); record({ op: "road-", i, j }); changed(); emit("unroad", { i, j }); return true;
 }
 const inBoard = (i, j) => i >= 0 && j >= 0 && i < N && j < N;
+const roadLevel = (i, j) => water.has(K(i, j)) ? Math.max(0, levelOf(i, j)) : levelOf(i, j);   // 过河的路是桥，高度取河岸
+function roadNb(k) {
+  const [i, j] = k.split(",").map(Number), y = roadLevel(i, j), out = [];
+  FACES.forEach(([a, b]) => { const kk = K(i + a, j + b); if (roads.has(kk) && roadLevel(i + a, j + b) === y) out.push(kk); });
+  return out;
+}
+const deadEnds = () => [...roads].filter(k => roadNb(k).length === 1);
+/* 断头路：路网外圈每边挑几条通到边上的路，继续向外延伸若干格（平地、无楼无水、不贴着别的路），车从这些尽头出入 */
+function addSpurs(seed, per = 3) {
+  if (!roads.size) return 0;
+  const r = rng(seed + 11); let i0 = Infinity, i1 = -Infinity, j0 = Infinity, j1 = -Infinity, n = 0;
+  roads.forEach(k => { const [i, j] = k.split(",").map(Number); i0 = Math.min(i0, i); i1 = Math.max(i1, i); j0 = Math.min(j0, j); j1 = Math.max(j1, j); });
+  [[0, -1], [0, 1], [-1, 0], [1, 0]].forEach(([di, dj]) => {
+    const cand = [];
+    roads.forEach(k => { const [i, j] = k.split(",").map(Number), u = dj ? i : j;
+      const edge = dj < 0 ? j === j0 : dj > 0 ? j === j1 : di < 0 ? i === i0 : i === i1;
+      if (edge && roads.has(K(i - di, j - dj)) && u !== (dj ? i0 : j0) && u !== (dj ? i1 : j1)) cand.push([i, j, r()]); });
+    cand.sort((a, b) => a[2] - b[2]);
+    const picked = [];
+    cand.forEach(([i, j]) => {
+      const u = dj ? i : j; if (picked.length >= per || picked.some(p => Math.abs(p - u) < 10)) return;
+      const len = 6 + Math.floor(r() * 9), add = [];
+      for (let q = 1; q <= len; q++) {
+        const a = i + di * q, b = j + dj * q, k = K(a, b);
+        if (!inBoard(a, b) || stackOf(a, b).length || levelOf(a, b) || water.has(k) || roads.has(k) || roads.has(K(a + dj, b + di)) || roads.has(K(a - dj, b - di))) break;
+        add.push(k);
+      }
+      if (add.length >= 3) { add.forEach(k => roads.add(k)); picked.push(u); n++; }
+    });
+  });
+  if (n) rebuildRoads();
+  return n;
+}
 function dig(i, j) {                                    // 地面降低一层
   if (!inBoard(i, j) || stackOf(i, j).length || levelOf(i, j) <= -config.digMax) { emit("blocked", { i, j }); return false; }
   setLevel(i, j, levelOf(i, j) - 1); record({ op: "dig", i, j }); changed(); emit("dig", { i, j, level: levelOf(i, j) }); return true;
@@ -900,7 +1044,7 @@ function genTerrain(seed = Date.now()) {
   for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
     const d = Math.min(i, j, N - 1 - i, N - 1 - j); if (d >= band) continue;
     const e = Math.pow(1 - d / band, 1.25), nz = n1(i, j) * .7 + n2(i, j) * .3;
-    const h = Math.round(e * 55 + (nz - .5) * 50 * e + Math.max(0, nz - .6) * 120 * e - (d > band * .6 && nz < .3 ? 2 : 0));
+    const h = Math.round(e * 130 + (nz - .5) * 110 * e + Math.max(0, nz - .6) * 260 * e - (d > band * .6 && nz < .3 ? 2 : 0));
     const hc = Math.max(-config.digMax, Math.min(config.raiseMax, h)); if (hc) out.push([i, j, hc]);
   }
   return out;
@@ -917,7 +1061,7 @@ function genRiver(T, seed) {
       samples.push([ax + (bx - ax) * t + wob * (bz - az) / seg, az + (bz - az) * t - wob * (bx - ax) / seg, len + seg * t]); }
     len += seg;
   }
-  const src = 48;
+  const src = 90;
   samples.forEach(([x, z, sl]) => {
     const lvl = sl < sIn ? Math.round(src + (-1 - src) * (sl / sIn)) || -1 : -1;
     for (let i = Math.floor(x - 2); i <= Math.ceil(x + 2); i++) for (let j = Math.floor(z - 2); j <= Math.ceil(z + 2); j++) {
@@ -928,8 +1072,8 @@ function genRiver(T, seed) {
   out.forEach((lvl, k) => T.set(k, lvl));
   /* 切山谷：河两侧的山按离河距离逐级抬起，不会比河高出太多 */
   out.forEach((lvl, k) => { const [i, j] = k.split(",").map(Number);
-    for (let a = -6; a <= 6; a++) for (let b = -6; b <= 6; b++) { const kk = K(i + a, j + b); if (out.has(kk) || !inBoard(i + a, j + b)) continue;
-      const lim = Math.max(lvl, 0) + 1 + Math.max(Math.abs(a), Math.abs(b)) * 5, cur = L(i + a, j + b); if (cur > lim) T.set(kk, lim); } });
+    for (let a = -12; a <= 12; a++) for (let b = -12; b <= 12; b++) { const kk = K(i + a, j + b); if (out.has(kk) || !inBoard(i + a, j + b)) continue;
+      const lim = Math.max(lvl, 0) + 1 + Math.max(Math.abs(a), Math.abs(b)) * 7, cur = L(i + a, j + b); if (cur > lim) T.set(kk, lim); } });
   return out;
 }
 function genWorld(seed) {
@@ -989,21 +1133,58 @@ function exportJSON() {
   const out = [];
   cells.forEach((st, k) => { const [i, j] = k.split(",").map(Number);
     out.push([i, j, st.map(f => [f.t, f.s, f.v, f.r || 0, f.wings.map(w => [w.d, w.t, w.s, w.v, w.u || 0]), f.z || 1, f.decals.map(x => [x.d, x.u, x.type])])]); });
-  return { v: 5, cells: out, bridges: bridges.map(b => [...b.a, ...b.b, b.t, b.v]), terrain: terrainSnapshot(), water: [...water], grass: [...grass], seeded, roads: [...roads].map(k => k.split(",").map(Number)), blocks: blocks.map(b => [b.x, b.z, b.y, b.t, b.v]) };
+  const B = baseWorld(WORLD_SEED), td = [];
+  new Set([...terrain.keys(), ...B.T.keys()]).forEach(k => { const h = terrain.get(k) || 0; if (h !== (B.T.get(k) || 0)) td.push([...k.split(",").map(Number), h]); });
+  const diff = (S, base) => [[...S].filter(k => !base.has(k)), [...base].filter(k => !S.has(k))], [wa, wd] = diff(water, B.water), [ga, gd] = diff(grass, B.grass);
+  return { v: 6, world: WORLD_SEED, wv, edited, stamp, cells: out, bridges: bridges.map(b => [...b.a, ...b.b, b.t, b.v]), tdiff: td, wadd: wa, wdel: wd, gadd: ga, gdel: gd, seeded, roads: [...roads].map(k => k.split(",").map(Number)), blocks: blocks.map(b => [b.x, b.z, b.y, b.t, b.v]) };
 }
 function importJSON(d) {
   clearCity();
-  ((d && d.digs) || []).forEach(([i, j, n]) => { if (n > 0) terrain.set(K(i, j), -Math.min(config.digMax, n)); });     // v3：只有坑
-  ((d && d.terrain) || []).forEach(([i, j, h]) => { if (h) terrain.set(K(i, j), Math.max(-config.digMax, Math.min(config.raiseMax, h))); });
+  const lv = h => Math.max(-config.digMax, Math.min(config.raiseMax, h));
+  if (d && d.world != null) {                                                        // v6：生成世界 + 差异
+    const B = baseWorld(d.world);
+    B.T.forEach((h, k) => terrain.set(k, h)); B.water.forEach(k => water.add(k)); B.grass.forEach(k => grass.add(k));
+    (d.tdiff || []).forEach(([i, j, h]) => { if (h) terrain.set(K(i, j), lv(h)); else terrain.delete(K(i, j)); });
+    (d.wadd || []).forEach(k => water.add(k)); (d.wdel || []).forEach(k => water.delete(k));
+    (d.gadd || []).forEach(k => grass.add(k)); (d.gdel || []).forEach(k => grass.delete(k));
+  } else {
+    ((d && d.digs) || []).forEach(([i, j, n]) => { if (n > 0) terrain.set(K(i, j), -Math.min(config.digMax, n)); });     // v3：只有坑
+    ((d && d.terrain) || []).forEach(([i, j, h]) => { if (h) terrain.set(K(i, j), lv(h)); });
+    ((d && d.water) || []).forEach(k => water.add(k)); ((d && d.grass) || []).forEach(k => grass.add(k));
+  }
   if (pitMesh) rebuildTerrain();
-  seeded = (d && d.seeded) || 0;
-  ((d && d.water) || []).forEach(k => water.add(k)); ((d && d.grass) || []).forEach(k => grass.add(k)); if (pitMesh) rebuildTerrain();
+  seeded = (d && d.seeded) || 0; wv = (d && d.wv) || 0; stamp = (d && d.stamp) || 0;
+  edited = d && d.edited != null ? d.edited : (d && d.seeded ? 0 : 1);               // 旧存档：不是默认城区就算改动过
   ((d && d.roads) || []).forEach(([i, j]) => roads.add(K(i, j))); if (roadMesh) rebuildRoads();
   ((d && d.cells) || []).forEach(([i, j, st]) => st.forEach(([t, s, v, r, ws, z, dcs]) => {
     if (FLOORS.has(t) && SIZES[s] && canPlace(i, j)) addFloor(i, j, { t, s, v, r: r || 0, z: z || 1, decals: (dcs || []).map(([d2, u2, ty]) => ({ d: d2, u: u2, type: ty })), wings: (ws || []).filter(w => FLOORS.has(w[1])).map(([d2, t2, s2, v2, u2]) => ({ d: d2, t: t2, s: s2, v: v2, u: u2 || 0 })) }); }));
   ((d && d.bridges) || []).forEach(b => addBridge(b.slice(0, 3), b.slice(3, 6), b[6] || "shaft", b[7] || 0));
   ((d && d.blocks) || []).forEach(([x, z, y, t, v]) => { if (isFixed(t)) addBlockObj({ x, z, y, t, v }); });
   hist.length = 0; changed();
+}
+/* 生成的世界（同一种子结果固定）缓存起来，存档只记与它的差异 */
+const WORLD_SEED = 20261007, WORLD_VER = 2, worldCache = new Map();
+let wv = 0, edited = 0, stamp = 0;
+function baseWorld(seed) {
+  if (!worldCache.has(seed)) { const w = genWorld(seed); worldCache.set(seed, { T: new Map(w.terrain.map(([i, j, h]) => [K(i, j), h])), water: new Set(w.water), grass: new Set(w.grass) }); }
+  return worldCache.get(seed);
+}
+/* 旧城市换上新版世界：边缘山体、河流、草地按新生成的来；有楼 / 有路的格子保持原高度，
+   河道经过的格子上的楼移走让河贯通（路保留，成桥）；路网没有断头路时补几条 */
+function migrateWorld() {
+  const B = baseWorld(WORLD_SEED), band = config.terrainBand, built = new Set([...cells.keys(), ...roads]);
+  const cellOfBlock = b => K(Math.floor(b.x + HALF), Math.floor(b.z + HALF));
+  blocks.forEach(b => built.add(cellOfBlock(b)));
+  B.water.forEach(k => { const [i, j] = k.split(",").map(Number); while (popFloor(i, j)); blocks.filter(b => cellOfBlock(b) === k).forEach(dropBlock); });
+  for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+    const k = K(i, j), d = Math.min(i, j, N - 1 - i, N - 1 - j);
+    if (B.water.has(k) || (!built.has(k) && (d < band || B.T.has(k)))) { const h = B.T.get(k) || 0; if (h) terrain.set(k, h); else terrain.delete(k); }
+  }
+  water.clear(); B.water.forEach(k => water.add(k));
+  grass.clear(); B.grass.forEach(k => { if (!built.has(k)) grass.add(k); });
+  rebuildTerrain(); rebuildRoads(); wv = WORLD_VER;
+  if (deadEnds().length < 2) addSpurs(WORLD_SEED);
+  hist.length = 0; redoStack.length = 0; changed();
 }
 function save() { try { localStorage.setItem(KEY_CITY, JSON.stringify(exportJSON())); } catch (e) { } }
 function load() { try { const d = JSON.parse(localStorage.getItem(KEY_CITY)); if (d) importJSON(d); } catch (e) { } }
@@ -1120,7 +1301,7 @@ function updateLink() {
 /* ---------------- 指针：旋转 / 平移 / 缩放 ---------------- */
 function bindPointer(cv) {
   cv.addEventListener("contextmenu", e => e.preventDefault());
-  const hov = e => { setHover(expanded ? pick(e) : null); if (tAnchor) updateLink(); };
+  const hov = e => { setHover(expanded && !sel.view ? pick(e) : null); if (tAnchor) updateLink(); };
   cv.addEventListener("pointerleave", () => { if (!drag) setHover(null); });
   cv.addEventListener("pointerdown", e => {
     e.stopPropagation();
@@ -1146,7 +1327,7 @@ function bindPointer(cv) {
     hov(e);
   });
   const end = e => { if (!drag) return; const d0 = drag; drag = null; pivot.visible = false;
-    if (expanded && e.type === "pointerup" && d0.moved < 5) { if (d0.btn === 0) doPlace(); else if (d0.btn === 2) doDelete(); } req(); cv.classList.remove("grabbing"); try { cv.releasePointerCapture(e.pointerId); } catch (_) { } hov(e); };
+    if (expanded && !sel.view && e.type === "pointerup" && d0.moved < 5) { if (d0.btn === 0) doPlace(); else if (d0.btn === 2) doDelete(); } req(); cv.classList.remove("grabbing"); try { cv.releasePointerCapture(e.pointerId); } catch (_) { } hov(e); };
   cv.addEventListener("pointerup", end); cv.addEventListener("pointercancel", end);
   cv.addEventListener("wheel", e => {
     e.preventDefault(); e.stopPropagation();
@@ -1212,6 +1393,8 @@ addEventListener("keydown", e => {
   if ((e.ctrlKey || e.metaKey) && k === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if ((e.ctrlKey || e.metaKey) && k === "y") { e.preventDefault(); redo(); return; }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (k === "escape") { e.preventDefault(); if (pure) setPure(false); else collapse(); return; }
+  if (sel.view && (k === " " || e.code === "Space" || k === "x" || k === "f" || k === "t")) { e.preventDefault(); return; }   // 浏览模式不放不删
   if (k === " " || e.code === "Space") { e.preventDefault(); if (!e.repeat) { if (sel.tpl || sel.decal === "window" || sel.decal === "door") doPlace(); else startHold("space", doPlace); } return; }
   if (k === "x") { e.preventDefault(); if (!e.repeat) startHold("del", doDelete); return; }
   if (k === "w" || k === "a" || k === "s" || k === "d") { e.preventDefault(); panKeys.add(k); return; }
@@ -1222,7 +1405,6 @@ addEventListener("keydown", e => {
   if (k === "c") { e.preventDefault(); cycleSize(1); return; }
   if (k === "r") { e.preventDefault(); rotateSel(); return; }
   if (k === "f") { e.preventDefault(); if (!e.repeat) startHold("f", () => { if (hover && hover.kind === "top" && !stackOf(hover.i, hover.j).length) fill(hover.i, hover.j); }); return; }
-  if (k === "escape") { e.preventDefault(); collapse(); }
 }, true);
 addEventListener("keyup", e => {
   const k = e.key.toLowerCase();
@@ -1239,13 +1421,61 @@ addEventListener("keyup", e => {
 });
 addEventListener("blur", () => { stopHold("space"); stopHold("del"); stopHold("f"); panKeys.clear(); tAnchor = null; tSide = null; if (linkLine) updateLink(); });
 
-/* ---------------- 昼夜：只跟随网页主题 ---------------- */
+/* ---------------- 昼夜：现实 24 分钟 = 城里一天（1 分钟 = 1 小时），所有人看到的是同一时刻 ----------------
+   傍晚城市渐暗、窗户逐盏亮灯，车灯一次全开；清晨渐亮、灯逐盏熄灭。网页主题只管窗口外框 */
 function themeNight() { return document.documentElement.getAttribute("data-theme") === "dark"; }
-function refreshNight() { const n = themeNight(); if (n !== night || !scene) { night = n; if (scene) applyPalette(); emit("night", night); } }
+let dark = 0, light = 0, hourFix = null;
+const smooth = t => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); };
+function cityHour() { if (hourFix != null) return hourFix; const ms = config.dayMinutes * 60000; return (Date.now() % ms) / ms * 24; }
+function darkAt(h) { return h < 5 ? 1 : h < 7.5 ? 1 - smooth((h - 5) / 2.5) : h < 17 ? 0 : h < 20 ? smooth((h - 17) / 3) : 1; }
+function lightAt(h) { return h < 4.5 ? 1 : h < 7.5 ? 1 - (h - 4.5) / 3 : h < 17.5 ? 0 : h < 21 ? (h - 17.5) / 3.5 : 1; }
+function updateClock(force) {
+  const h = cityHour(), d = darkAt(h), l = lightAt(h);
+  updateSky(h);
+  if (!force && Math.abs(d - dark) < .003 && Math.abs(l - light) < .003) return;
+  dark = d; light = l;
+  if ((l > 0) !== night) { night = l > 0; emit("night", night); }
+  if (scene) applyPalette();
+}
+/* 云海背景：清晨 / 白天 / 傍晚 / 夜晚 四张静态图（启动时画好），随时间交替淡入淡出，城市像浮在云上的空岛 */
+const SKY = [["night", "#0b0f1d", "#1d2540", "rgba(58,68,104,.9)", "rgba(30,37,62,.9)"], ["dawn", "#f4c9b4", "#fbe9dc", "rgba(255,246,240,.95)", "rgba(228,196,196,.9)"],
+  ["day", "#bcdcf2", "#eaf4fb", "rgba(255,255,255,.96)", "rgba(206,220,234,.92)"], ["dusk", "#e9a07c", "#b98fb6", "rgba(255,226,206,.92)", "rgba(176,128,160,.9)"]];
+const SKY_KEYS = [[0, 0], [4.5, 0], [6, 1], [8, 2], [16.5, 2], [18.5, 3], [20.5, 0], [24, 0]];
+let skyImgs = null, skyLast = "";
+function skyImage([id, top, bottom, lit, shade], seed) {
+  const W = 1280, H = 800, cv = document.createElement("canvas"); cv.width = W; cv.height = H; const g = cv.getContext("2d"), r = rng(seed);
+  const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, top); gr.addColorStop(1, bottom); g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  if (id === "night") for (let q = 0; q < 160; q++) { g.fillStyle = "rgba(255,255,255," + (.25 + r() * .6).toFixed(2) + ")"; g.fillRect(r() * W, r() * H * .45, 1.4, 1.4); }
+  g.filter = "blur(2px)";
+  for (let row = 0; row < 16; row++) {
+    const t = row / 15, y = H * (.3 + t * .78), sz = 14 + t * t * 120;                       // 越往下（越近）云团越大
+    for (let x = -sz * r(); x < W + sz; x += sz * (.8 + r() * .7)) {
+      const cx = x, cy = y + (r() - .5) * sz * .35, rr = sz * (.55 + r() * .6);
+      g.fillStyle = shade; g.beginPath(); g.ellipse(cx, cy + rr * .22, rr * 1.3, rr * .5, 0, 0, 7); g.fill();
+      g.fillStyle = lit; g.beginPath(); g.ellipse(cx - rr * .08, cy, rr * 1.12, rr * .44, 0, 0, 7); g.fill();
+    }
+  }
+  return cv.toDataURL("image/jpeg", .86);
+}
+function makeSky(el) {
+  if (!skyImgs) skyImgs = SKY.map((d, q) => skyImage(d, 31 + q));
+  const box = document.createElement("div"); box.className = "city-sky";
+  box.innerHTML = skyImgs.map(u => '<i style="background-image:url(' + u + ')"></i>').join("");
+  el.prepend(box);
+}
+function updateSky(h) {
+  let q = 0; while (q < SKY_KEYS.length - 2 && h >= SKY_KEYS[q + 1][0]) q++;
+  const [h0, a] = SKY_KEYS[q], [h1, b] = SKY_KEYS[q + 1], t = h1 > h0 ? Math.max(0, Math.min(1, (h - h0) / (h1 - h0))) : 0;
+  const key = a + "," + b + "," + t.toFixed(3); if (key === skyLast) return; skyLast = key;
+  document.querySelectorAll(".city-sky").forEach(box => [...box.children].forEach((el, k) => {    // 底下一张不透明，上面一张按进度淡入
+    el.style.opacity = k === a ? 1 : k === b ? t : 0; el.style.zIndex = k === b && a !== b ? 2 : k === a ? 1 : 0; }));
+}
 
 /* ---------------- 界面：右下角、展开窗口、底部选择栏 ---------------- */
 const UNDO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>';
 const REDO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg>';
+const MOUSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M6 3.5 18 13l-5.2.8 3 6.2-2.3 1.1-3-6.3L6 18.6z"/></svg>';
+const FULL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
 const DI = p => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round">' + p + "</svg>";
 const DECALS = [
   ["street", "街道", DI('<path d="M7 3 4 21M17 3l3 18"/><path d="M12 4v3M12 10.5v3M12 17v3"/>')],
@@ -1256,8 +1486,10 @@ const extraButtons = [];
 function addButton(b) { extraButtons.push(b); renderBar(); }
 function renderBar() {
   if (!bar) return;
-  bar.innerHTML = '<div class="cb-group cb-types">' + ORDER.map(id => { const d = FLOORS.get(id);
-      return '<button class="cb-btn' + (sel.t === id && !sel.tpl && !sel.decal ? ' on' : '') + '" data-t="' + id + '" aria-label="' + d.name + '">' + (d.icon || d.name.slice(0, 1)) + '</button>'; }).join("") + '</div>'
+  bar.innerHTML = '<div class="cb-group"><button class="cb-btn' + (sel.view ? ' on' : '') + '" data-act="view" aria-label="浏览">' + MOUSE + '</button>'
+    + '<button class="cb-btn" data-act="pure" aria-label="全览">' + FULL + '</button></div><span class="cb-sep"></span>'
+    + '<div class="cb-group cb-types">' + ORDER.map(id => { const d = FLOORS.get(id);
+      return '<button class="cb-btn' + (sel.t === id && !sel.tpl && !sel.decal && !sel.view ? ' on' : '') + '" data-t="' + id + '" aria-label="' + d.name + '">' + (d.icon || d.name.slice(0, 1)) + '</button>'; }).join("") + '</div>'
     + '<span class="cb-sep"></span><div class="cb-group">' + TORDER.map(id => { const d = TEMPLATES.get(id);
       return '<button class="cb-btn' + (sel.tpl === id ? ' on' : '') + '" data-tpl="' + id + '" aria-label="' + d.name + '">' + (d.icon || d.name.slice(0, 1)) + '</button>'; }).join("") + '</div>'
     + '<span class="cb-sep"></span><div class="cb-group">' + DECALS.map(([id, name, icon]) => '<button class="cb-btn' + (sel.decal === id ? ' on' : '') + '" data-decal="' + id + '" aria-label="' + name + '">' + icon + '</button>').join("") + '</div>'
@@ -1269,14 +1501,22 @@ function renderBar() {
     + '</div>';
 }
 function select(t, s, r) {
-  if (t && FLOORS.has(t)) { sel.t = t; sel.tpl = null; sel.decal = null; } if (s && SIZES[s]) sel.s = s; if (r != null) sel.r = ((+r % 360) + 360) % 360;
+  if (t && FLOORS.has(t)) { sel.t = t; sel.tpl = null; sel.decal = null; sel.view = false; } if (s && SIZES[s]) sel.s = s; if (r != null) sel.r = ((+r % 360) + 360) % 360;
   try { localStorage.setItem(KEY_SEL, JSON.stringify(sel)); } catch (e) { }
   renderBar(); updateGhost(); emit("select", Object.assign({}, sel));
 }
 function mount(target) { host = target; host.appendChild(renderer.domElement); resize(); applyPalette(); }
 function expand() { if (expanded) return; expanded = true; pop.classList.add("show"); mount(popStage); emit("expand"); }
+/* 全览：窗口铺满屏幕（能全屏就全屏），按钮全部隐藏，快捷键照常；Esc 退出 */
+let pure = false;
+function setPure(on) {
+  if (on === pure || (on && !expanded)) return; pure = on; pop.classList.toggle("pure", on); hideTypePreview();
+  try { if (on && pop.requestFullscreen) pop.requestFullscreen().catch(() => { }); else if (!on && document.fullscreenElement) document.exitFullscreen().catch(() => { }); } catch (e) { }
+  emit("pure", on);
+}
+function setView(on) { sel.view = on; if (on) { sel.tpl = null; sel.decal = null; setHover(null); } select(); }
 function collapse() {
-  if (!expanded) return; expanded = false;
+  if (!expanded) return; setPure(false); expanded = false;
   stopHold("space"); stopHold("del"); panKeys.clear(); tAnchor = null; updateLink(); setHover(null);
   pop.classList.remove("show"); mount(corner.querySelector(".city-host")); emit("collapse");
 }
@@ -1284,7 +1524,12 @@ function injectCSS() {
   const st = document.createElement("style");
   st.textContent = `
   .city-host{position:absolute;inset:0;overflow:hidden}
-  .city-canvas{display:block;width:100%;height:100%;cursor:grab;touch-action:none}
+  .city-canvas{position:relative;display:block;width:100%;height:100%;cursor:grab;touch-action:none}
+  .city-sky{position:absolute;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+  .city-sky i{position:absolute;inset:0;background-size:cover;background-position:center 40%;opacity:0}
+  .city-pop.pure{padding:0;background:#000}
+  .city-pop.pure .city-win{width:100%;height:100%;border-radius:0;box-shadow:none;transform:none}
+  .city-pop.pure .city-bar,.city-pop.pure .city-tri,.city-pop.pure .cb-pv{display:none}
   .city-canvas.grabbing{cursor:grabbing}
   .city-tri{position:absolute;left:0;top:0;width:36px;height:36px;border:0;padding:0;margin:0;cursor:pointer;z-index:3;background:transparent}
   .city-tri::before{content:"";position:absolute;left:0;top:0;width:18px;height:18px;background:var(--accent);
@@ -1370,13 +1615,16 @@ function buildUI() {
   bar.addEventListener("click", e => {
     const b = e.target.closest(".cb-btn"); if (!b) return;
     if (b.dataset.t) select(b.dataset.t); else if (b.dataset.s) select(null, b.dataset.s);
-    else if (b.dataset.tpl) { sel.tpl = sel.tpl === b.dataset.tpl ? null : b.dataset.tpl; sel.decal = null; select(); }
-    else if (b.dataset.decal) { sel.decal = sel.decal === b.dataset.decal ? null : b.dataset.decal; sel.tpl = null; select(); }
+    else if (b.dataset.tpl) { sel.tpl = sel.tpl === b.dataset.tpl ? null : b.dataset.tpl; sel.decal = null; sel.view = false; select(); }
+    else if (b.dataset.decal) { sel.decal = sel.decal === b.dataset.decal ? null : b.dataset.decal; sel.tpl = null; sel.view = false; select(); }
+    else if (b.dataset.act === "view") setView(!sel.view); else if (b.dataset.act === "pure") setPure(true);
     else if (b.dataset.act === "undo") undo(); else if (b.dataset.act === "redo") redo();
     else if (b.dataset.x != null) { const x = extraButtons[+b.dataset.x]; if (x && x.onClick) x.onClick(api); }
   });
+  makeSky(corner.querySelector(".city-host")); makeSky(popStage);
+  document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && pure) setPure(false); });
   new ResizeObserver(resize).observe(corner); new ResizeObserver(resize).observe(popStage);
-  new MutationObserver(() => { refreshNight(); applyPalette(); }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  new MutationObserver(() => pop.classList.toggle("night", themeNight())).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   renderBar();
 }
 
@@ -1400,7 +1648,8 @@ function seedCity(seed) {
     for (let ox = 1; ox <= 5; ox++) for (let oz = 1; oz <= 5; oz++) { const [i, j] = cellOf(bx, bz, ox, oz);
       if (r() < p && !stackOf(i, j).length && !water.has(K(i, j))) placeTemplate(i, j, "random", Math.floor(r() * 1e9)); }
   }
-  seeded = SEED_VER; hist.length = 0; redoStack.length = 0; changed();
+  addSpurs(seed);
+  seeded = SEED_VER; edited = 0; hist.length = 0; redoStack.length = 0; changed();
 }
 let seeded = 0;
 
@@ -1409,18 +1658,35 @@ let started = false;
 function start() {
   corner = document.getElementById("corner");
   if (started || !corner || !corner.offsetWidth) return;
-  started = true; night = themeNight();
+  started = true;
   initThree(); buildUI(); bindPointer(renderer.domElement);
-  mount(corner.querySelector(".city-host"));
-  let saved = null; try { saved = localStorage.getItem(KEY_CITY); } catch (e) { }
-  let old = null; try { old = saved && JSON.parse(saved); } catch (e) { }
-  const oldSeed = old && !old.roads && (old.cells || []).length === 88 && (old.cells || []).reduce((a, c) => a + c[2].length, 0) === 3803;
-  const stale = old && old.seeded && old.seeded < SEED_VER;                       // 没改动过的旧版默认城区：换成新版
-  if (saved && !oldSeed && !stale) load(); else setWorld(genWorld(20261007));
-  if (!cells.size && !blocks.length) seedCity(20261007);
-  updateGhost();
+  mount(corner.querySelector(".city-host")); updateClock(true);
+  if (window.IntersectionObserver) new IntersectionObserver(es => { cityVisible = es[es.length - 1].isIntersecting; }).observe(corner);
+  loadCity();
+}
+/* 访客第一次打开载入我发布的城市，之后他们的改动只存在他们自己的浏览器里；
+   没改动过的访客在我重新发布后会换成新版本 */
+async function fetchPublished() {
+  try { const r = await fetch("data.json?_=" + Date.now(), { cache: "no-store" }); if (!r.ok) return null;
+    const j = await r.json(); return j && j.city ? (typeof j.city === "string" ? JSON.parse(j.city) : j.city) : null; } catch (e) { return null; }
+}
+async function loadCity() {
+  let local = null; try { local = JSON.parse(localStorage.getItem(KEY_CITY)); } catch (e) { }
+  const isEdited = d => !!d && (d.edited != null ? !!d.edited : !d.seeded);
+  const oldSeed = local && !local.roads && (local.cells || []).length === 88 && (local.cells || []).reduce((a, c) => a + c[2].length, 0) === 3803;
+  const stale = local && !isEdited(local) && (oldSeed || (local.seeded && local.seeded < SEED_VER));   // 没改动过的旧版默认城区：换成新版
+  const fresh = () => { clearCity(); setWorld(genWorld(WORLD_SEED)); wv = WORLD_VER; seedCity(WORLD_SEED); };
+  const done = () => { if (wv < WORLD_VER) migrateWorld(); if (!cells.size && !blocks.length) seedCity(WORLD_SEED); updateGhost(); save(); };
+  if (local && !stale) { importJSON(local); done(); }
+  if (!isEdited(local)) {
+    const pub = await fetchPublished();
+    if (pub && (!local || stale || (local.stamp || 0) !== (pub.stamp || 0))) { importJSON(pub); edited = 0; stamp = pub.stamp || 0; done(); }
+    else if (!local || stale) fresh();
+  }
   emit("ready", api);
 }
+/* 发布：返回带新版本号的城市数据（字符串），由网页写进 data.json */
+function publishJSON() { stamp = Date.now(); save(); return JSON.stringify(exportJSON()); }
 
 /* ---------------- 扩展接口 ----------------
    CityGame.registerFloor(def)                 新增楼层类型（见上方 def 说明；helpers.facade / helpers.F 生成立面线条）
@@ -1434,7 +1700,9 @@ function start() {
 const api = {
   registerFloor, registerTemplate, placeTemplate, addButton, on, off, place, remove, addWing, removeWing, connect, dig, fill,
   addRoad, removeRoad, addGrass, removeGrass, genWorld, setWorld, addDecal, removeDecal, raise: fill, lower: dig, randomTerrain, genTerrain, group, placeBlock, removeBlock, mergeNeighbor, seedCity, undo, redo, clear: clearCity,
-  select, expand, collapse, rotateBy, exportJSON, importJSON, config, sizes: SIZES, helpers, three: THREE,
+  select, expand, collapse, rotateBy, exportJSON, importJSON, publishJSON, migrateWorld, addSpurs, setPure, setView, config,
+  setHour(h) { hourFix = h == null ? null : ((+h % 24) + 24) % 24; updateClock(true); },
+  get hour() { return cityHour(); }, get started() { return started; }, get cars() { return cars; }, sizes: SIZES, helpers, three: THREE,
   get floors() { return ORDER.map(id => FLOORS.get(id)); },
   get selected() { return Object.assign({}, sel); },
   get scene() { return scene; }, get camera() { return camera; }, get renderer() { return renderer; },
