@@ -10,7 +10,7 @@
        右键单击 / X       删掉指着的方块 / 侧翼 / 连接，否则删该格最上一层；空格子则把地面降低一层（最多地下三层）；X 长按连删
        贴图：街道铺在空地格上（自动连路、画路缘与中线），窗户 / 门贴在楼层侧面所指位置；右键或 X 移除
        左键拖动平移，右键拖动旋转（Shift+左键也可）；W A S D 按屏幕方向平移
-       选中小方块（固定 0.16）时可在格子里任意位置摆放：指地面 / 楼顶放在所指位置，指方块顶面叠上去，指方块侧面紧贴一块
+       选中小方块（边长 1/6）时可在格子里任意位置摆放：指地面 / 楼顶放在所指位置，指方块顶面叠上去，指方块侧面紧贴一块
        F      空格子把地面升高一层（坑先填平，最高 12 层；相邻同高的地块连成一体，中间不画缝线）
        选中地标后按空格：在指着的格子放下整栋地标（一次撤销整栋撤掉）
        T      指着某层侧面单按 → 与该面朝向的相邻楼（同高度那层）合为一栋，中间按所指那层的样式填满
@@ -37,7 +37,7 @@ const config = {
   builtinWindows: false,                          // 楼层 / 方块是否自带窗（默认不带，窗户用贴图加）
   fadeNear: 12, fadeReach: 6,                     // 相机距离小于 fadeNear 才虚化；只虚化离镜头 fadeReach 格以内挡视线的楼                               // 相机距离小于它时视野可移到棋盘任意位置，大于它逐步回中
   thickness: 3,                                   // 棋盘厚度（格）
-  digLevel: .16, digMax: 3, raiseMax: 300,         // 地面每层高度（= 一层楼高）、最多下挖 / 升高几层（山可以比最高的楼还高）
+  digLevel: 1 / 6, digMax: 3, raiseMax: 300,       // 地块每层高度 = 小方块边长 = 一层楼高（1/6 格，三者对齐，叠起来没有缝）、最多下挖 / 升高几层
   terrainBand: 40,                                // 随机地形只在离边缘这么多格以内，越靠边越高
   wingDepth: .32,                                 // 侧翼伸出的深度（格）
   repeatDelay: 300, repeatEvery: 90,              // 长按连放 / 连删的节奏（毫秒）
@@ -133,9 +133,9 @@ function roundPanes(rad, h, { s: size = "M", rot = false, seed = 1, lit = .72 } 
 /* ---------------- 楼层类型注册表 ----------------
    def = {
      id, name, icon(24×24 线条 SVG 字符串),
-     height: 数字 | (w)=>数字    层高（格，默认 0.16 = 一排方格），可按占地宽度 w 计算
+     height: 数字 | (w)=>数字    层高（格，默认 1/6，与地块、小方块一致），可按占地宽度 w 计算
      cap: true                    封顶层：上面不能再盖，也不能当侧翼
-     width: 数字                   固定占地宽度（格），不随 S/M/L 变化（如 0.16 的小方块）
+     width: 数字                   固定占地宽度（格），不随 S/M/L 变化（如 1/6 的小方块）
      seamless: true               无缝层：同类型、同尺寸、同朝向上下相叠时，层间不画横线，像一整根连续的塔身
                                   （上下边线自动从实体轮廓里拆出，也可在 build 里返回 ringTop / ringBottom 自定义）
      build({THREE,w,h,seed,helpers}) → { solid, lines?, panes?, autoEdges? }
@@ -150,7 +150,7 @@ function floorHeight(def, w) { return typeof def.height === "function" ? def.hei
 function registerFloor(def) {
   if (!def || !def.id || typeof def.build !== "function") throw new Error("registerFloor: 需要 id 和 build");
   if (!FLOORS.has(def.id)) ORDER.push(def.id);
-  FLOORS.set(def.id, Object.assign({ name: def.id, height: .16, cap: false, icon: "" }, def));
+  FLOORS.set(def.id, Object.assign({ name: def.id, height: 1 / 6, cap: false, icon: "" }, def));
   [...geoCache.keys()].forEach(k => { if (k.startsWith(def.id + "|")) geoCache.delete(k); });
   renderBar(); emit("register", def);
 }
@@ -210,7 +210,7 @@ registerFloor({ id: "column", name: "圆柱塔身", seamless: true, win: { s: "T
     return { solid: g, lines: lines(p), autoEdges: false, ringTop: lines(ring(r + .002, h)), ringBottom: lines(ring(r + .002, 0)),
       panes: roundPanes(r, h, { seed, s: "T" }) };
   } });
-registerFloor({ id: "podium", name: "裙楼大板", height: .32, win: { s: "T", rot: true }, icon: I('<rect x="3" y="7" width="18" height="12"/><path d="M3 13h18M9 7v12M15 7v12"/><circle cx="12" cy="10" r="1.6"/>'),
+registerFloor({ id: "podium", name: "裙楼大板", height: 1 / 3, win: { s: "T", rot: true }, icon: I('<rect x="3" y="7" width="18" height="12"/><path d="M3 13h18M9 7v12M15 7v12"/><circle cx="12" cy="10" r="1.6"/>'),
   build: ({ w, h, seed }) => {
     return { solid: box(w, h), lines: facade(w, h, F.mullions("T", true)), panes: boxPanes(w, h, { seed, s: "T", rot: true }) };
   } });
@@ -223,7 +223,7 @@ registerFloor({ id: "round", name: "圆形层", win: { s: "M", round: true }, ic
     for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; p.push([Math.cos(a) * (r + .002), 0, Math.sin(a) * (r + .002)], [Math.cos(a) * (r + .002), h, Math.sin(a) * (r + .002)]); }
     return { solid: g, lines: lines(p), autoEdges: false, panes: roundPanes(r, h, { seed, s: "M" }) };
   } });
-registerFloor({ id: "roofbox", name: "屋顶设备", height: .12, icon: I('<path d="M4 17h16"/><rect x="9" y="12" width="6" height="5"/><path d="M11 12v5M13 12v5"/>'),
+registerFloor({ id: "roofbox", name: "屋顶设备", height: 1 / 6, icon: I('<path d="M4 17h16"/><rect x="9" y="12" width="6" height="5"/><path d="M11 12v5M13 12v5"/>'),
   build: ({ w, h }) => ({ solid: merge([box(w * .92, .03), box(w * .34, h - .03, w * .34, .03, w * .15, -w * .12)]) }) });
 registerFloor({ id: "parapet", name: "平顶女儿墙", cap: true, height: .12, icon: I('<path d="M4 16h16v-3H4zM6 13v-2h12v2"/>'),
   build: ({ w, h }) => ({ solid: merge([box(w, .04), box(w, h - .04, .03, .04, 0, w / 2 - .015), box(w, h - .04, .03, .04, 0, -w / 2 + .015), box(.03, h - .04, w, .04, w / 2 - .015), box(.03, h - .04, w, .04, -w / 2 + .015)]) }) });
@@ -921,7 +921,7 @@ function addBridge(a, b, t = "shaft", v = 0) {
 function dropBridge(rec) { const n = bridges.indexOf(rec); if (n >= 0) bridges.splice(n, 1); bridgeGroup.remove(rec.obj); dispose(rec.obj); }
 const sameF = (x, y) => x[0] === y[0] && x[1] === y[1] && x[2] === y[2];
 
-/* ---------------- 自由方块：固定尺寸楼型（如 0.16 小方块）可在格子里任意位置摆放 ----------------
+/* ---------------- 自由方块：固定尺寸楼型（如 1/6 小方块）可在格子里任意位置摆放 ----------------
    blocks: [{ x, z, y, t, v, obj }]（世界坐标，x/z 吸附到每格 6×6 子网格的中心，所以 36 块正好铺满一格）；
    落在地面、楼顶或下方方块上，也可贴在方块侧面悬空。点哪个面就贴着哪个面放，不会错位斜搭 */
 const blocks = [], SUB = 6;
