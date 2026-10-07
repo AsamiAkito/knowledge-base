@@ -39,7 +39,7 @@ const config = {
   wingDepth: .32,                                 // 侧翼伸出的深度（格）
   repeatDelay: 300, repeatEvery: 90,              // 长按连放 / 连删的节奏（毫秒）
   dayMinutes: 24,                                 // 现实多少分钟是城里的一天
-  carsPer: 26, carsMax: 60                        // 每多少格街道一辆车、最多几辆
+  carsPer: 5.2, carsMax: 300                      // 每多少格街道一辆车、最多几辆
 };
 
 /* 界面元素（注册内置楼层前声明，renderBar 会用到） */
@@ -566,6 +566,7 @@ function updateCamera() { fadeDirty = true;
   camera.lookAt(cam.tx, 0, cam.tz);
   const w = host ? host.clientWidth : 300, h = host ? host.clientHeight : 150;
   camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix();
+  moveSky();
   if (pivot) { pivot.position.set(orbit ? orbit.x : cam.tx, 0, orbit ? orbit.z : cam.tz); pivot.scale.setScalar(cam.dist / 40); }
   req();
 }
@@ -862,7 +863,7 @@ function removeBlock(b) {                                 // 删这一列最上�
 
 /* ---------------- 车辆：从断头路尽头出现，沿街道开到另一条断头路的尽头消失，消失一辆补一辆；
    数量与街道格数成正比。只在城市可见时运动：右下角约 20 帧，展开后满帧，页面在后台时暂停 ---------------- */
-const cars = []; let carMesh, carLines, carLamps, carDirty = true, carEnds = [], carLast = 0, cityVisible = true;
+const cars = []; let carInter = new Set(), carSeq = 0, carMesh, carLines, carLamps, carDirty = true, carEnds = [], carLast = 0, cityVisible = true;
 const CAR = (() => {                                                 // 车身 + 车顶两只盒子，车头朝 +x
   const b1 = new THREE.BoxGeometry(.3, .07, .15); b1.translate(0, .055, 0);
   const b2 = new THREE.BoxGeometry(.15, .055, .12); b2.translate(-.03, .1175, 0);
@@ -907,19 +908,54 @@ function spawnCar(mid) {
   const start = carEnds[Math.floor(Math.random() * carEnds.length)];
   if (!mid && cars.some(c => c.path[0] === start && c.s < 1.2)) return false;     // 同一路口刚出来一辆，等它开远
   const path = route(start); if (!path || path.length < 3) return false;
-  const pts = lanePoints(path), c = { path, pts, len: pts.length - 1, v: 1 + Math.random() * .9, s: 0 };
-  if (mid) c.s = Math.random() * c.len * .95;
+  const pts = lanePoints(path), c = { id: ++carSeq, path, pts, len: pts.length - 1, v: 1 + Math.random() * .9, s: 0 };
+  if (mid) { c.s = Math.random() * c.len * .95; const p = carPose(c);
+    if (cars.some(o => o.p && Math.hypot(o.p.x - p.x, o.p.z - p.z) < .45)) return false; c.p = p; }
   cars.push(c); return true;
 }
 function stepCars(dt) {
-  if (carDirty) { carDirty = false; carEnds = deadEnds();
+  if (carDirty) { carDirty = false; carEnds = deadEnds(); carInter = new Set([...roads].filter(k => roadNb(k).length >= 3));
     for (let q = cars.length - 1; q >= 0; q--) if (cars[q].path.some(k => !roads.has(k))) cars.splice(q, 1); }
   const want = carEnds.length < 2 ? 0 : Math.min(config.carsMax, Math.round(roads.size / config.carsPer));
   if (cars.length > want) cars.length = want;
   const first = !cars.length;
-  for (let n = 0; cars.length < want && n < (first ? want * 2 : 2); n++) spawnCar(first);
-  for (let q = cars.length - 1; q >= 0; q--) { const c = cars[q]; c.s += c.v * dt; if (c.s >= c.len) cars.splice(q, 1); }
+  for (let n = 0; cars.length < want && n < (first ? want * 3 : 3); n++) spawnCar(first);
+  cars.forEach(c => { c.p = carPose(c); });
+  /* 网格分桶找邻车：只看前方 0.75 格以内、横向偏差小（同一车道或正在横穿）的车 */
+  const grid = new Map(), cellKey = (x, z) => Math.floor(x) + "," + Math.floor(z);
+  cars.forEach(c => { const k = cellKey(c.p.x, c.p.z); (grid.get(k) || grid.set(k, []).get(k)).push(c); });
+  cars.forEach(c => {
+    const { x, z, cs, sn } = c.p; let gap = Infinity; c.block = null;
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) (grid.get(cellKey(x + a, z + b)) || []).forEach(o => {
+      if (o === c || o.s < .3) return;                                     // 刚出现的车还在缩放，不挡人
+      const dx = o.p.x - x, dz = o.p.z - z, ahead = dx * cs + dz * sn, side = Math.abs(-dx * sn + dz * cs);
+      if (ahead > .02 && ahead < .75 && side < .16 && ahead < gap) { gap = ahead; c.block = o; }
+    });
+    c.gap = gap;
+  });
+  /* 路口：进路口前要先占住这一格；已被别的车占着（在里面或离得更近）就停在路口外等它过去 */
+  const hold = new Map(), appr = [];
+  cars.forEach(c => { c.q = Math.round(c.s); const k = c.path[c.q]; if (carInter.has(k) && !hold.has(k)) hold.set(k, c); });
+  cars.forEach(c => { for (let q = c.q + 1; q < c.path.length && q - .5 - c.s < .9; q++) if (carInter.has(c.path[q])) { appr.push([q - .5 - c.s, c, c.path[q]]); break; } });
+  appr.sort((a, b) => a[0] - b[0]).forEach(([e, c, k]) => { const h = hold.get(k); if (!h) hold.set(k, c); else if (h !== c) c.gap = Math.min(c.gap, e + .16); });
+  cars.forEach(c => {
+    if (c.block && c.block.block === c && c.id < c.block.id) c.gap = Infinity;     // 互相挡住（路口对角）时编号小的先走
+    if (c.wait > 4) c.gap = Infinity;                                              // 堵死超过 4 秒就让它慢慢挤过去
+    const want = c.gap === Infinity ? c.v : c.v * Math.max(0, Math.min(1, (c.gap - .36) / .3));
+    c.cur = c.cur == null ? want : c.cur + Math.max(-dt * 6, Math.min(dt * 2.5, want - c.cur));   // 刹车快、起步慢
+    c.wait = c.cur < .05 ? (c.wait || 0) + dt : Math.max(0, (c.wait || 0) - dt * 2);
+  });
+  for (let q = cars.length - 1; q >= 0; q--) { const c = cars[q]; c.s += c.cur * dt; if (c.s >= c.len) cars.splice(q, 1); }
   drawCars();
+}
+/* 车在路上的位置与朝向（路口转弯时车头平滑转向） */
+function carPose(c) {
+  const s = Math.min(c.len - 1e-6, c.s), a = Math.floor(s), t = s - a, A = c.pts[a], B = c.pts[a + 1];
+  const seg = (m) => { const P = c.pts[m], Q = c.pts[m + 1]; return P && Q ? [Q[0] - P[0], Q[2] - P[2]] : null; };
+  let [hx, hz] = seg(a); const nx = t > .7 ? seg(a + 1) : t < .3 ? seg(a - 1) : null;
+  if (nx) { const w = t > .7 ? (t - .7) / .6 : (.3 - t) / .6; hx += (nx[0] - hx) * w; hz += (nx[1] - hz) * w; }
+  const hl = Math.hypot(hx, hz) || 1;
+  return { x: A[0] + (B[0] - A[0]) * t, y: A[1] + (B[1] - A[1]) * t, z: A[2] + (B[2] - A[2]) * t, cs: hx / hl, sn: hz / hl };
 }
 let carDrawn = 0;
 function drawCars() {
@@ -929,12 +965,7 @@ function drawCars() {
     for (let v = 0; v < src.length; v += 3) { const lx = src[v], ly = src[v + 1], lz = src[v + 2];
       dst[off + v] = (isN ? 0 : x) + (lx * cs - lz * sn) * (isN ? 1 : sc); dst[off + v + 1] = (isN ? 0 : y) + ly * (isN ? 1 : sc); dst[off + v + 2] = (isN ? 0 : z) + (lx * sn + lz * cs) * (isN ? 1 : sc); } };
   cars.forEach((c, q) => {
-    const s = Math.min(c.len - 1e-6, c.s), a = Math.floor(s), t = s - a, A = c.pts[a], B = c.pts[a + 1];
-    const seg = (m) => { const P = c.pts[m], Q = c.pts[m + 1]; return P && Q ? [Q[0] - P[0], Q[2] - P[2]] : null; };
-    let [hx, hz] = seg(a); const nx = t > .7 ? seg(a + 1) : t < .3 ? seg(a - 1) : null;          // 路口转弯时车头平滑转向
-    if (nx) { const w = t > .7 ? (t - .7) / .6 : (.3 - t) / .6; hx += (nx[0] - hx) * w; hz += (nx[1] - hz) * w; }
-    const hl = Math.hypot(hx, hz) || 1, cs = hx / hl, sn = hz / hl, sc = Math.max(.01, Math.min(1, c.s / .5, (c.len - c.s) / .5));   // 出现 / 消失时缩放
-    const x = A[0] + (B[0] - A[0]) * t, y = A[1] + (B[1] - A[1]) * t, z = A[2] + (B[2] - A[2]) * t;
+    const { x, y, z, cs, sn } = carPose(c), sc = Math.max(.01, Math.min(1, c.s / .5, (c.len - c.s) / .5));   // 出现 / 消失时缩放
     put(CAR.face, fp.array, q * CAR.face.length, x, y, z, cs, sn, sc); put(CAR.norm, fn.array, q * CAR.norm.length, 0, 0, 0, cs, sn, 1, true);
     put(CAR.edge, ep.array, q * CAR.edge.length, x, y, z, cs, sn, sc); put(CAR.lamp, lp.array, q * CAR.lamp.length, x, y, z, cs, sn, sc);
   });
@@ -1422,11 +1453,20 @@ addEventListener("keyup", e => {
 addEventListener("blur", () => { stopHold("space"); stopHold("del"); stopHold("f"); panKeys.clear(); tAnchor = null; tSide = null; if (linkLine) updateLink(); });
 
 /* ---------------- 昼夜：现实 24 分钟 = 城里一天（1 分钟 = 1 小时），所有人看到的是同一时刻 ----------------
-   傍晚城市渐暗、窗户逐盏亮灯，车灯一次全开；清晨渐亮、灯逐盏熄灭。网页主题只管窗口外框 */
+   傍晚城市渐暗、窗户逐盏亮灯，车灯一次全开；清晨渐亮、灯逐盏熄灭。
+   切换网页明暗（~ 键或主题按钮）时，城里时间跳到中午 / 夜里 10 点，之后照常走 */
 function themeNight() { return document.documentElement.getAttribute("data-theme") === "dark"; }
 let dark = 0, light = 0, hourFix = null;
+const KEY_CLOCK = "myspace-city-clock";
+let clockOffset = (() => { try { return +localStorage.getItem(KEY_CLOCK) || 0; } catch (e) { return 0; } })();
+function jumpTo(h) {                                       // 让城里此刻变成 h 点（存本机，之后从这里继续走）
+  const ms = config.dayMinutes * 60000, now = ((Date.now() + clockOffset) % ms + ms) % ms;
+  clockOffset = ((clockOffset + h / 24 * ms - now) % ms + ms) % ms;
+  try { localStorage.setItem(KEY_CLOCK, String(Math.round(clockOffset))); } catch (e) { }
+  hourFix = null; updateClock(true);
+}
 const smooth = t => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); };
-function cityHour() { if (hourFix != null) return hourFix; const ms = config.dayMinutes * 60000; return (Date.now() % ms) / ms * 24; }
+function cityHour() { if (hourFix != null) return hourFix; const ms = config.dayMinutes * 60000; return (((Date.now() + clockOffset) % ms + ms) % ms) / ms * 24; }
 function darkAt(h) { return h < 5 ? 1 : h < 7.5 ? 1 - smooth((h - 5) / 2.5) : h < 17 ? 0 : h < 20 ? smooth((h - 17) / 3) : 1; }
 function lightAt(h) { return h < 4.5 ? 1 : h < 7.5 ? 1 - (h - 4.5) / 3 : h < 17.5 ? 0 : h < 21 ? (h - 17.5) / 3.5 : 1; }
 function updateClock(force) {
@@ -1437,38 +1477,31 @@ function updateClock(force) {
   if ((l > 0) !== night) { night = l > 0; emit("night", night); }
   if (scene) applyPalette();
 }
-/* 云海背景：清晨 / 白天 / 傍晚 / 夜晚 四张静态图（启动时画好），随时间交替淡入淡出，城市像浮在云上的空岛 */
-const SKY = [["night", "#0b0f1d", "#1d2540", "rgba(58,68,104,.9)", "rgba(30,37,62,.9)"], ["dawn", "#f4c9b4", "#fbe9dc", "rgba(255,246,240,.95)", "rgba(228,196,196,.9)"],
-  ["day", "#bcdcf2", "#eaf4fb", "rgba(255,255,255,.96)", "rgba(206,220,234,.92)"], ["dusk", "#e9a07c", "#b98fb6", "rgba(255,226,206,.92)", "rgba(176,128,160,.9)"]];
+/* 云海背景：清晨 / 白天 / 傍晚 / 夜晚 四张俯瞰云海照片（Unsplash 免费授权，见 assets/sky/CREDITS.txt），
+   随时间交替淡入淡出，城市像浮在云上的空岛；只加载正在显示的那几张 */
+const SKY = ["night", "dawn", "day", "dusk"].map(id => new URL("sky/" + id + ".jpg", import.meta.url).href);
 const SKY_KEYS = [[0, 0], [4.5, 0], [6, 1], [8, 2], [16.5, 2], [18.5, 3], [20.5, 0], [24, 0]];
-let skyImgs = null, skyLast = "";
-function skyImage([id, top, bottom, lit, shade], seed) {
-  const W = 1280, H = 800, cv = document.createElement("canvas"); cv.width = W; cv.height = H; const g = cv.getContext("2d"), r = rng(seed);
-  const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, top); gr.addColorStop(1, bottom); g.fillStyle = gr; g.fillRect(0, 0, W, H);
-  if (id === "night") for (let q = 0; q < 160; q++) { g.fillStyle = "rgba(255,255,255," + (.25 + r() * .6).toFixed(2) + ")"; g.fillRect(r() * W, r() * H * .45, 1.4, 1.4); }
-  g.filter = "blur(2px)";
-  for (let row = 0; row < 16; row++) {
-    const t = row / 15, y = H * (.3 + t * .78), sz = 14 + t * t * 120;                       // 越往下（越近）云团越大
-    for (let x = -sz * r(); x < W + sz; x += sz * (.8 + r() * .7)) {
-      const cx = x, cy = y + (r() - .5) * sz * .35, rr = sz * (.55 + r() * .6);
-      g.fillStyle = shade; g.beginPath(); g.ellipse(cx, cy + rr * .22, rr * 1.3, rr * .5, 0, 0, 7); g.fill();
-      g.fillStyle = lit; g.beginPath(); g.ellipse(cx - rr * .08, cy, rr * 1.12, rr * .44, 0, 0, 7); g.fill();
-    }
-  }
-  return cv.toDataURL("image/jpeg", .86);
-}
+let skyLast = "";
 function makeSky(el) {
-  if (!skyImgs) skyImgs = SKY.map((d, q) => skyImage(d, 31 + q));
   const box = document.createElement("div"); box.className = "city-sky";
-  box.innerHTML = skyImgs.map(u => '<i style="background-image:url(' + u + ')"></i>').join("");
-  el.prepend(box);
+  box.innerHTML = ["night", "dawn", "day", "dusk"].map(k => '<i data-k="' + k + '"></i>').join("");
+  el.prepend(box); skyLast = ""; moveSky();
+}
+/* 视差：旋转时背景横向轻移，平移时跟着地面方向挪一点，俯仰时上下挪，拉近时略放大 */
+function moveSky() {
+  const th = rad(cam.theta), ox = (cam.tx * Math.cos(th) - cam.tz * Math.sin(th)) / HALF, oz = (cam.tx * Math.sin(th) + cam.tz * Math.cos(th)) / HALF;
+  const x = Math.sin(th) * 4 - ox * 2.5, y = (cam.phi - 38) * .12 - oz * 1.5, sc = 1.16 + (1 - Math.min(1, cam.dist / config.distMax)) * .06;
+  const tf = "translate(" + x.toFixed(2) + "%," + y.toFixed(2) + "%) scale(" + sc.toFixed(3) + ")";
+  document.querySelectorAll(".city-sky").forEach(b => { b.style.transform = tf; });
 }
 function updateSky(h) {
   let q = 0; while (q < SKY_KEYS.length - 2 && h >= SKY_KEYS[q + 1][0]) q++;
   const [h0, a] = SKY_KEYS[q], [h1, b] = SKY_KEYS[q + 1], t = h1 > h0 ? Math.max(0, Math.min(1, (h - h0) / (h1 - h0))) : 0;
   const key = a + "," + b + "," + t.toFixed(3); if (key === skyLast) return; skyLast = key;
   document.querySelectorAll(".city-sky").forEach(box => [...box.children].forEach((el, k) => {    // 底下一张不透明，上面一张按进度淡入
-    el.style.opacity = k === a ? 1 : k === b ? t : 0; el.style.zIndex = k === b && a !== b ? 2 : k === a ? 1 : 0; }));
+    const op = k === a ? 1 : k === b ? t : 0;
+    if (op > 0 && !el.style.backgroundImage) el.style.backgroundImage = "url(" + SKY[k] + ")";
+    el.style.opacity = op; el.style.zIndex = k === b && a !== b ? 2 : k === a ? 1 : 0; }));
 }
 
 /* ---------------- 界面：右下角、展开窗口、底部选择栏 ---------------- */
@@ -1525,8 +1558,11 @@ function injectCSS() {
   st.textContent = `
   .city-host{position:absolute;inset:0;overflow:hidden}
   .city-canvas{position:relative;display:block;width:100%;height:100%;cursor:grab;touch-action:none}
-  .city-sky{position:absolute;inset:0;z-index:0;pointer-events:none;overflow:hidden}
-  .city-sky i{position:absolute;inset:0;background-size:cover;background-position:center 40%;opacity:0}
+  .city-sky{position:absolute;inset:0;z-index:0;pointer-events:none;transform-origin:50% 50%;will-change:transform}
+  .city-host,.city-stage{overflow:hidden}
+  .city-sky i{position:absolute;inset:0;background-size:cover;background-position:center 45%;opacity:0;transition:opacity 1.2s linear;
+    filter:saturate(.72) contrast(.92) brightness(1.04)}                  /* 照片压一点饱和与对比，贴近线稿的淡雅 */
+  .city-sky i[data-k=night]{filter:saturate(.6) contrast(.95) brightness(.42)}
   .city-pop.pure{padding:0;background:#000}
   .city-pop.pure .city-win{width:100%;height:100%;border-radius:0;box-shadow:none;transform:none}
   .city-pop.pure .city-bar,.city-pop.pure .city-tri,.city-pop.pure .cb-pv{display:none}
@@ -1624,7 +1660,7 @@ function buildUI() {
   makeSky(corner.querySelector(".city-host")); makeSky(popStage);
   document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && pure) setPure(false); });
   new ResizeObserver(resize).observe(corner); new ResizeObserver(resize).observe(popStage);
-  new MutationObserver(() => pop.classList.toggle("night", themeNight())).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  new MutationObserver(() => { const n = themeNight(); pop.classList.toggle("night", n); jumpTo(n ? 22 : 12); }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   renderBar();
 }
 
@@ -1701,6 +1737,7 @@ const api = {
   registerFloor, registerTemplate, placeTemplate, addButton, on, off, place, remove, addWing, removeWing, connect, dig, fill,
   addRoad, removeRoad, addGrass, removeGrass, genWorld, setWorld, addDecal, removeDecal, raise: fill, lower: dig, randomTerrain, genTerrain, group, placeBlock, removeBlock, mergeNeighbor, seedCity, undo, redo, clear: clearCity,
   select, expand, collapse, rotateBy, exportJSON, importJSON, publishJSON, migrateWorld, addSpurs, setPure, setView, config,
+  jumpTo, tickCars: dt => stepCars(dt),
   setHour(h) { hourFix = h == null ? null : ((+h % 24) + 24) % 24; updateClock(true); },
   get hour() { return cityHour(); }, get started() { return started; }, get cars() { return cars; }, sizes: SIZES, helpers, three: THREE,
   get floors() { return ORDER.map(id => FLOORS.get(id)); },
