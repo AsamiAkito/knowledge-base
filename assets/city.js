@@ -1717,9 +1717,9 @@ function updateClock(force) {
   if ((l > 0) !== night) { night = l > 0; emit("night", night); }
   if (scene) applyPalette();
 }
-/* 云海背景：清晨 / 白天 / 傍晚 / 夜晚 四张俯瞰云海照片（Unsplash 免费授权，见 assets/sky/CREDITS.txt），
+/* 云海背景：清晨 / 白天 / 黄昏 / 夜晚 四张同一片云海的俯瞰图（assets/sky/*.webp，按原样显示），
    随时间交替淡入淡出，城市像浮在云上的空岛；只加载正在显示的那几张 */
-const SKY = ["night", "dawn", "day", "dusk"].map(id => new URL("sky/" + id + ".jpg", import.meta.url).href);
+const SKY = ["night", "dawn", "day", "dusk"].map(id => new URL("sky/" + id + ".webp", import.meta.url).href);
 const SKY_KEYS = [[0, 0], [4.5, 0], [6, 1], [8, 2], [16.5, 2], [18.5, 3], [20.5, 0], [24, 0]];
 let skyLast = "";
 function makeSky(el) {
@@ -1807,9 +1807,7 @@ function injectCSS() {
   .city-canvas{position:relative;display:block;width:100%;height:100%;cursor:grab;touch-action:none}
   .city-sky{position:absolute;inset:0;z-index:0;pointer-events:none;transform-origin:50% 50%;will-change:transform}
   .city-host,.city-stage{overflow:hidden}
-  .city-sky i{position:absolute;inset:0;background-size:cover;background-position:center 45%;opacity:0;transition:opacity 1.2s linear;
-    filter:saturate(.72) contrast(.92) brightness(1.04)}                  /* 照片压一点饱和与对比，贴近线稿的淡雅 */
-  .city-sky i[data-k=night]{filter:saturate(.6) contrast(.95) brightness(.42)}
+  .city-sky i{position:absolute;inset:0;background-size:cover;background-position:center 45%;opacity:0;transition:opacity 1.2s linear}
   .city-pop.pure{padding:0;background:#000}
   .city-pop.pure .city-win{width:100%;height:100%;border-radius:0;box-shadow:none;transform:none}
   .city-pop.pure .city-bar,.city-pop.pure .city-tri,.city-pop.pure .cb-pv{display:none}
