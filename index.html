@@ -643,8 +643,6 @@
   .doc-meta{display:flex;align-items:center;flex-wrap:wrap;gap:var(--s2)}
   .doc-meta .t{margin-right:0}
   .doc-meta .stat{font-family:var(--mono);font-size:12px;color:var(--text-dim)}
-  .doc-empty{display:flex;flex-direction:column;align-items:flex-start;gap:var(--s4);padding:var(--s7) 0;color:var(--text-dim)}
-  .doc-empty svg{width:40px;height:40px;stroke:var(--line);fill:none;stroke-width:1.5}
   /* 收藏详情 */
   .fav-detail h1{margin:0 0 var(--s1);font-size:20px;font-weight:700;line-height:1.4}
   .fav-detail .src{color:var(--text-dim);font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:var(--s4)}
@@ -858,16 +856,12 @@
   .gal-b:hover{background:rgba(255,255,255,.24)}.gal-b svg{width:20px;height:20px}
   .gal-b.prev{left:3vw}.gal-b.next{right:3vw}
   .lightbox.out{animation:fade var(--d1) var(--e-io) reverse both}
-  /* 右下角：站点时钟 */
+  /* 右下角：预留给小游戏 */
   .corner{display:none}
   @media(min-width:1081px){
     .corner{display:block;position:fixed;right:0;bottom:0;width:20vw;height:16.6667vh;padding:20px 14px;z-index:2;overflow:hidden}
-    .fb-meta{display:none}
-    .foot-band{grid-template-columns:repeat(3,minmax(0,1fr))}
+
   }
-  .cn-time{font-family:var(--display);font-size:24px;font-weight:700;line-height:1.2;margin-top:var(--s2);font-variant-numeric:tabular-nums;letter-spacing:.04em}
-  .cn-date{font-family:var(--mono);font-size:12px;color:var(--text-soft);margin-top:2px}
-  .cn-meta{font-size:12px;color:var(--text-dim);margin-top:var(--s2);line-height:1.7}
 
   /* 内置 Twemoji（本地文件，不依赖外部网络；未收录的表情自动回退系统字体） */
   img.emoji{height:1.15em;width:1.15em;margin:0 .06em -.18em;display:inline-block;vertical-align:baseline}
@@ -915,7 +909,7 @@
 <input type="file" id="photoInput" accept="image/*" multiple style="display:none">
 <input type="file" id="postImgInput" accept="image/*" multiple style="display:none">
 <div id="toast"></div>
-<div class="corner" id="corner"><div class="ph-title">LOCAL TIME</div><div class="cn-time" id="cnTime">--:--:--</div><div class="cn-date" id="cnDate"></div><div class="cn-meta" id="cnMeta"></div></div>
+<div class="corner" id="corner"></div>
 
 
 <!-- ============================================================
@@ -1477,7 +1471,7 @@ function renderKB(){
     mid='<div class="crumb">'+crumb+(node.hidden?' · <span class="hbadge">已隐藏</span>':'')+'</div><h1 class="doc">'+esc(node.name)+'</h1>'
       +'<div class="doc-meta">'+(node.tags||[]).map(t=>'<span class="t">'+esc(t)+'</span>').join("")+stat+'</div>'+dtools
       +(chars||(node.body||"").trim()?'<div class="md">'+vd.html+'</div>'
-        :'<div class="doc-empty"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h4"/></svg>'+(em?'<button class="btn" data-action="kb-edit" data-id="'+node.id+'">开始写</button>':'<span>空文档</span>')+'</div>');
+        :'');
   } else {
     const crumb=loc.trail.map(t=>esc(t.name)).join('<span class="dot">/</span>');
     const kids=(node.children||[]).filter(n=>em||!n.hidden);
@@ -1826,13 +1820,23 @@ function railPanel(label,count,body,tools){
 }
 /* 照片墙：最新的在上；有尺寸的先占位，加载完淡入；点开为可翻页相册 */
 function photoList(){return (DATA.photos||[]).slice().reverse();}
+const KEY_RATIO="myspace-photo-ratio";
+let photoRatio=(()=>{try{return JSON.parse(localStorage.getItem(KEY_RATIO))||{}}catch(e){return{}}})();
+const photoSeen=new Set();
+function photoLoaded(img){
+  img.classList.add("ok");const src=img.getAttribute("src");photoSeen.add(src);
+  if(img.naturalWidth&&!photoRatio[src]){photoRatio[src]=img.naturalWidth+"/"+img.naturalHeight;
+    try{localStorage.setItem(KEY_RATIO,JSON.stringify(photoRatio))}catch(e){}
+    const box=img.closest(".photo");if(box&&!box.style.aspectRatio)box.style.aspectRatio=photoRatio[src];}
+}
 function railPhotosHTML(){
   const em=state.editMode,ps=photoList();
   if(!ps.length&&!em)return "";
-  const items=ps.map(p=>'<div class="photo" data-pid="'+p.id+'"'+(p.w&&p.h?' style="aspect-ratio:'+p.w+'/'+p.h+'"':'')+'>'
-    +'<img src="'+esc(p.src)+'" alt="" draggable="false" loading="lazy" onload="this.classList.add(\'ok\')">'
+  const items=ps.map(p=>{const ar=p.w&&p.h?p.w+'/'+p.h:photoRatio[p.src];
+    return '<div class="photo" data-pid="'+p.id+'"'+(ar?' style="aspect-ratio:'+ar+'"':'')+'>'
+    +'<img src="'+esc(p.src)+'" alt="" draggable="false"'+(photoSeen.has(p.src)?' class="ok"':'')+' onload="photoLoaded(this)">'
     +(em?'<button class="mini danger pdel" data-action="photo-del" data-id="'+p.id+'">删除</button>':'')
-    +'</div>').join("");
+    +'</div>';}).join("");
   return railPanel("PHOTOS",ps.length,ps.length?'<div class="photowall">'+items+'</div>':'',
     em?'<button class="btn sm soft rp-tool" data-action="photo-add">上传照片</button>':'');
 }
@@ -2130,19 +2134,6 @@ function emojify(html){
 }
 
 /* 顶栏指示条滑到当前板块 */
-function tickCorner(){
-  const d=new Date(),p=n=>String(n).padStart(2,"0"),t=$("#cnTime"),dt=$("#cnDate");if(!t)return;
-  t.textContent=p(d.getHours())+":"+p(d.getMinutes())+":"+p(d.getSeconds());
-  dt.textContent=d.getFullYear()+"."+p(d.getMonth()+1)+"."+p(d.getDate())+" 周"+"日一二三四五六"[d.getDay()];
-}
-async function cornerMeta(){
-  const m=$("#cnMeta");if(!m)return;
-  let days=null;try{days=await fetchContrib(false);}catch(e){try{days=JSON.parse(localStorage.getItem("myspace-contrib")).days;}catch(_){}}
-  const last=days?Object.keys(days).sort().pop():null;
-  let ago="";if(last){const n=Math.floor((new Date(new Date().toDateString())-new Date(last+"T00:00:00"))/864e5);ago=n<=0?"今天":n===1?"昨天":n+" 天前";}
-  m.innerHTML=(ago?"更新于 "+ago+"<br>":"")+"© "+new Date().getFullYear()+" 秋渡";
-}
-tickCorner();setInterval(tickCorner,1000);setTimeout(cornerMeta,800);
 function moveTabInk(){const ink=$("#tabInk"),b=document.querySelector("nav.tabs button.active");if(!ink||!b)return;
   const r=document.createRange();r.selectNodeContents(b);const tr=r.getBoundingClientRect(),br=b.getBoundingClientRect();
   ink.style.width=Math.round(tr.width)+"px";ink.style.transform="translateX("+Math.round(b.offsetLeft+tr.left-br.left)+"px)";}
@@ -2159,7 +2150,7 @@ function renderFootBand(){
   box.innerHTML=(p?cell("LATEST",'data-view="feed" data-id="'+p.id+'"',plain(p.text).slice(0,60),p.date||""):'<div></div>')
     +(doc?cell("READING",'data-view="kb" data-id="'+doc.id+'"',doc.name,(doc.tags||[]).join(" · ")||(docChars(doc)?docChars(doc).toLocaleString()+" 字":"")):'<div></div>')
     +(fv?cell("SAVED",'data-view="fav" data-f="'+fv.fi+'" data-i="'+fv.ii+'"',fv.it.title,fv.f.name+(fv.it.added?" · "+fv.it.added.slice(0,10):" · "+(fv.f.items||[]).length+" 项")):'<div></div>')
-;
+    +'<div class="fb-meta">© '+new Date().getFullYear()+' 秋渡</div>';
 }
 /* 进入动效：只在切换板块 / 打开详情时播放，点赞评论等局部刷新不重播 */
 let _enterKey="";
@@ -2168,15 +2159,15 @@ function afterRender(){
   const prev=_enterKey.split("|"),cur=[state.view,state.feedOpen,state.feedMonth,state.kbSel,state.editingFile,state.favFolder,state.favItem];
   const k=cur.join("|");if(k===_enterKey)return;_enterKey=k;
   let targets;
-  if(prev[0]!==String(state.view))targets=[app];                                  /* 换板块：整页一次淡入 */
+  if(prev[0]!==String(state.view))targets=[...app.querySelectorAll(".feed-side,.feed,.kb-tree,.kb-main,.kb-notes,.fav-side,.fav>section")]; /* 换板块：内容淡入，右栏直接替换 */
   else if(state.view==="feed")targets=[...app.querySelectorAll(".feed")];          /* 打开 / 返回动态：只动中栏 */
   else if(state.view==="kb")targets=[...app.querySelectorAll(".kb-main,.kb-notes")];/* 换文档：目录不动 */
   else targets=[...app.querySelectorAll(".fav>section")];                          /* 换收藏夹：侧栏不动 */
-  targets.forEach(el=>fadeIn(el,el===app?180:220));
+  targets.forEach(el=>fadeIn(el,200));
 }
 function fadeIn(el,ms){
   if(!el.animate||matchMedia("(prefers-reduced-motion:reduce)").matches)return;
-  el.animate([{opacity:0,transform:el===app?"none":"translateY(4px)"},{opacity:1,transform:"none"}],{duration:ms,easing:"cubic-bezier(.2,.8,.2,1)"});
+  el.animate([{opacity:0},{opacity:1}],{duration:ms,easing:"cubic-bezier(.2,.8,.2,1)"});
 }
 ["renderFeed","renderKB","renderFav"].forEach(n=>{const fn=window[n];window[n]=function(){const r=fn.apply(this,arguments);afterRender();return r;};});
 
