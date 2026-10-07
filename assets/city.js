@@ -12,7 +12,8 @@
        选中小方块（固定 0.16）时可在格子里任意位置摆放：指地面 / 楼顶放在所指位置，指方块顶面叠上去，指方块侧面紧贴一块
        F      空格子把地面升高一层（坑先填平，最高 12 层；相邻同高的地块连成一体，中间不画缝线）
        选中地标后按空格：在指着的格子放下整栋地标（一次撤销整栋撤掉）
-       T      指着一层按住，移到另一栋楼的某层松开 → 两层相对的面直接融合相连
+       T      指着某层侧面单按 → 与该面朝向的相邻楼（同高度那层）合为一栋，中间按所指那层的样式填满
+              按住移到另一栋楼的某层松开 → 两层相对的面融合相连（用选中的楼型样式）
        Q / E  选左 / 右一个楼层    Z / C  尺寸减小 / 增大    R  顺时针旋转 15°
        Ctrl+Z 撤销   Ctrl+Shift+Z / Ctrl+Y 重做   Esc 收起
    · 每位访客的城市存在本机 localStorage
@@ -27,7 +28,7 @@ const config = {
   phiMin: 12, phiMax: 85,                         // 俯仰角范围（度，离地面的仰角）
   thetaRange: null,                               // 水平旋转范围 [min,max]（度），null 为不限
   fov: 35,                                        // 透视视角（度）
-  distMin: 4, distMax: 420,                       // 相机到中轴点的距离范围（缩放）
+  distMin: 1.2, distMax: 420,                       // 相机到中轴点的距离范围（缩放）
   rotStep: 15,                                    // R 键每次顺时针旋转的角度
   damping: .22,                                   // 旋转缓动（0–1，越大越跟手）
   recenterNear: 30,                               // 相机距离小于它时视野可移到棋盘任意位置，大于它逐步回中
@@ -175,9 +176,9 @@ body("curtain", "玻璃幕墙", I('<rect x="6" y="5" width="12" height="15"/><pa
 body("plain", "实墙层", I('<rect x="5" y="8" width="14" height="10"/>'), null, null);
 body("square", "正方形方格", I('<rect x="4" y="8" width="16" height="5.3"/><path d="M9.3 8v5.3M14.6 8v5.3"/><rect x="4" y="13.3" width="16" height="5.3"/><path d="M9.3 13.3v5.3M14.6 13.3v5.3"/>'),
   (w, h) => F.cols(Math.max(2, Math.round(w / .16)))(w, h), w => ({ cols: Math.max(2, Math.round(w / .16)), ph: .7, pr: .7 }));
-registerFloor({ id: "cube", name: "小方块", width: .16, icon: I('<path d="M12 6l6 3.5v7L12 20l-6-3.5v-7z"/><path d="M6 9.5l6 3.5 6-3.5M12 13v7"/>'),
+registerFloor({ id: "cube", name: "小方块", width: 1 / 6, height: 1 / 6, icon: I('<path d="M12 6l6 3.5v7L12 20l-6-3.5v-7z"/><path d="M6 9.5l6 3.5 6-3.5M12 13v7"/>'),
   build: ({ w, h, seed }) => ({ solid: box(w, h), panes: boxPanes(w, h, { seed, cols: 1, ph: .6, pr: .6 }) }) });
-registerFloor({ id: "cubeS", name: "小方块（无缝）", width: .16, seamless: true, icon: I('<path d="M12 3l5 2.8v12.4L12 21l-5-2.8V5.8z"/><path d="M7 5.8l5 2.8 5-2.8M12 8.6V21"/>'),
+registerFloor({ id: "cubeS", name: "小方块（无缝）", width: 1 / 6, height: 1 / 6, seamless: true, icon: I('<path d="M12 3l5 2.8v12.4L12 21l-5-2.8V5.8z"/><path d="M7 5.8l5 2.8 5-2.8M12 8.6V21"/>'),
   build: ({ w, h, seed }) => ({ solid: box(w, h), panes: boxPanes(w, h, { seed, cols: 1, ph: 1, pr: .6 }) }) });
 body("shaft", "光面塔身", I('<path d="M7 3v18M17 3v18"/>'), null, w => ({ cols: 2, ph: 1, pr: .25, lit: .5 }), { seamless: true });
 body("slot", "竖条窗", I('<path d="M6 3v18M18 3v18M9 3v18M10 3v18M14 3v18M15 3v18"/>'),
@@ -322,8 +323,8 @@ let night = false, hover = null, expanded = false, tAnchor = null, drag = null;
 
 /* ---------------- three.js 场景 ---------------- */
 let facadeMat, renderer, scene, camera, hemi, sun, faceMat, lineMat, paneMat, ghostFace, ghostLine, hiLine;
-let ground, groundTop, digMask, pitMesh, pitEdges, pitMat, gridMinor, gridMajor, floorsGroup, bridgeGroup, hoverBox, ghost, pivot, linkLine, hitMeshes = [], hiObj = null;
-const cam = { tx: 0, tz: 0, theta: 45, phi: 35.26, dist: 64 }, goal = { theta: 45, phi: 35.26 };
+let bakeGroup, ground, groundTop, digMask, pitMesh, pitEdges, pitMat, gridMinor, gridMajor, floorsGroup, bridgeGroup, hoverBox, ghost, pivot, linkLine, hitMeshes = [], hiObj = null;
+const cam = { tx: 0, tz: 0, theta: 45, phi: 38, dist: 360 }, goal = { theta: 45, phi: 38 };   // 默认全览整块棋盘
 
 function initThree() {
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -359,7 +360,7 @@ function initThree() {
   gridMinor = new THREE.LineSegments(lines(mi), maskLines(new THREE.LineBasicMaterial({ color: 0xececf2, transparent: true }), M));
   gridMajor = new THREE.LineSegments(lines(ma), maskLines(new THREE.LineBasicMaterial({ color: 0xdadae4 }), M));
   scene.add(ground, new THREE.LineSegments(new THREE.EdgesGeometry(gGeo), lineMat), gridMinor, gridMajor);
-  floorsGroup = new THREE.Group(); bridgeGroup = new THREE.Group(); scene.add(floorsGroup, bridgeGroup);
+  floorsGroup = new THREE.Group(); bridgeGroup = new THREE.Group(); bakeGroup = new THREE.Group(); scene.add(floorsGroup, bridgeGroup, bakeGroup);
 
   hoverBox = new THREE.LineLoop(lines([[-.5, 0, -.5], [.5, 0, -.5], [.5, 0, .5], [-.5, 0, .5]]), new THREE.LineBasicMaterial({ color: 0x0e8fbc }));
   hoverBox.visible = false; scene.add(hoverBox);
@@ -389,6 +390,7 @@ function initThree() {
       if (panKeys.has("d")) { mx += -fz; mz += fx; } if (panKeys.has("a")) { mx -= -fz; mz -= fx; }
       if (mx || mz) { cam.tx += mx * sp; cam.tz += mz * sp; orbit = null; updateCamera(); }
     }
+    if (dirtyCells.size) { dirtyCells.forEach(bakeCell); dirtyCells.clear(); }
     if (!needs || !host) return; needs = false; fadeGrid(); renderer.render(scene, camera); emit("render");
   })();
 }
@@ -516,7 +518,7 @@ function orient(obj, w, r, z = 1) {                   // z：这一层的缩放�
 }
 const sameLayer = (a, b) => a && b && a.t === b.t && a.s === b.s && (a.r || 0) === (b.r || 0) && (a.z || 1) === (b.z || 1);
 function refreshSeams(i, j) {
-  const st = stackOf(i, j);
+  const st = stackOf(i, j); markDirty(i, j);
   const seams = (obj, top, bot) => obj.traverse(o => { if (o.userData.seam === "top") o.visible = top; else if (o.userData.seam === "bottom") o.visible = bot; });
   st.forEach((f, k) => {
     if (FLOORS.get(f.t).seamless) f.obj.children.forEach(o => { if (o.userData.seam === "top") o.visible = !sameLayer(f, st[k + 1]); else if (o.userData.seam === "bottom") o.visible = !sameLayer(f, st[k - 1]); });
@@ -525,6 +527,34 @@ function refreshSeams(i, j) {
       seams(w.obj, !same(st[k + 1]), !same(st[k - 1])); });
   });
   req();
+}
+/* ---------- 按格合并：一格里所有楼层（含侧翼）合成 实体 / 轮廓线 / 立面线 / 窗格 四个对象来画；
+   单层对象保留但不显示，只用于拾取。某格有改动就标脏，下一帧重新合并这一格 ---------- */
+const dirtyCells = new Set(), baked = new Map();
+function markDirty(i, j) { dirtyCells.add(K(i, j)); req(); }
+function bakeCell(key) {
+  const old = baked.get(key); if (old) { bakeGroup.remove(old); old.traverse(o => { if (o.geometry) o.geometry.dispose(); }); baked.delete(key); }
+  const [i, j] = key.split(",").map(Number), st = stackOf(i, j); if (!st.length) return;
+  const B = { solid: [], outline: [], facade: [], panes: [] };
+  const take = (o, bucket) => { const g = o.geometry.clone(); g.applyMatrix4(o.matrixWorld); B[bucket].push(g); };
+  st.forEach(f => {
+    f.obj.visible = true; f.obj.updateMatrixWorld(true);
+    (function walk(o, root) {
+      if (o !== root && !o.visible && !o.userData.pane) return;
+      if (o.isMesh && o.material === faceMat) take(o, "solid");
+      else if (o.isMesh && o.userData.pane) take(o, "panes");
+      else if (o.isLineSegments && (o.material === lineMat || o.userData.prevMat === lineMat)) take(o, "outline");
+      else if (o.isLineSegments && (o.material === facadeMat || o.userData.prevMat === facadeMat)) take(o, "facade");
+      o.children.forEach(c => walk(c, root));
+    })(f.obj, f.obj);
+    f.obj.visible = false;
+  });
+  const grp = new THREE.Group(), add = (list, make) => { const g = merge(list); if (g) grp.add(make(g)); };
+  add(B.solid, g => new THREE.Mesh(g, faceMat));
+  add(B.outline, g => new THREE.LineSegments(g, lineMat));
+  add(B.facade, g => new THREE.LineSegments(g, facadeMat));
+  add(B.panes, g => { const m = new THREE.Mesh(g, paneMat); m.userData.pane = true; m.visible = night; return m; });
+  bakeGroup.add(grp); baked.set(key, grp);
 }
 function addFloor(i, j, f) {
   const st = stackOf(i, j), k = st.length, y = stackTop(i, j), g = floorGeo(f.t, f.s, f.v);
@@ -542,14 +572,14 @@ function popFloor(i, j) {
   const gone = bridges.filter(b => (b.a[0] === i && b.a[1] === j && b.a[2] === k) || (b.b[0] === i && b.b[1] === j && b.b[2] === k));
   gone.forEach(dropBridge);
   floorsGroup.remove(f.obj); dispose(f.obj);
-  if (!st.length) cells.delete(K(i, j)); else refreshSeams(i, j);
+  if (!st.length) { cells.delete(K(i, j)); markDirty(i, j); } else refreshSeams(i, j);
   return { t: f.t, s: f.s, v: f.v, r: f.r, z: f.z, wings: f.wings.map(w => ({ d: w.d, t: w.t, s: w.s, v: w.v, u: w.u })), bridges: gone.map(b => ({ a: b.a, b: b.b, t: b.t, v: b.v })) };
 }
 /* 侧翼：挂在某层的某个面（d=0..3，楼层本地坐标的 +x +z -x -z），随楼层旋转缩放 */
 function wingU(parent, t, s, u) {                     // 固定尺寸侧翼沿面方向的位置（吸附、不出面）；其它侧翼居中
   if (!FLOORS.get(t) || !FLOORS.get(t).width) return 0;
   const lim = Math.max(0, floorGeo(parent.t, parent.s, parent.v).w / 2 - floorGeo(t, s, 0).w / 2);
-  return Math.max(-lim, Math.min(lim, Math.round((u || 0) / .04) * .04));
+  return Math.max(-lim, Math.min(lim, Math.round((u || 0) * SUB) / SUB));
 }
 function wingObj(parent, d, t, s, v, tag, mat, lmat, u = 0) {
   const g = floorGeo(t, s, v), pw = floorGeo(parent.t, parent.s, parent.v).w, ww = Math.min(g.w * .8, pw), depth = config.wingDepth;
@@ -639,9 +669,10 @@ function dropBridge(rec) { const n = bridges.indexOf(rec); if (n >= 0) bridges.s
 const sameF = (x, y) => x[0] === y[0] && x[1] === y[1] && x[2] === y[2];
 
 /* ---------------- 自由方块：固定尺寸楼型（如 0.16 小方块）可在格子里任意位置摆放 ----------------
-   blocks: [{ x, z, y, t, v, obj }]（世界坐标，x/z 吸附 0.04）；落在地面、楼顶或下方方块上，也可贴在方块侧面悬空 */
-const blocks = [], BSNAP = .04;
-const bsnap = v => Math.round(v / BSNAP) * BSNAP;
+   blocks: [{ x, z, y, t, v, obj }]（世界坐标，x/z 吸附到每格 6×6 子网格的中心，所以 36 块正好铺满一格）；
+   落在地面、楼顶或下方方块上，也可贴在方块侧面悬空。点哪个面就贴着哪个面放，不会错位斜搭 */
+const blocks = [], SUB = 6;
+const bsnap = v => (Math.floor(v * SUB + 1e-6) + .5) / SUB;
 const isFixed = t => !!(FLOORS.get(t) && FLOORS.get(t).width);
 const blockMode = () => isFixed(sel.t) && !sel.tpl;
 function bgeo(b) { return floorGeo(b.t, "M", b.v || 0); }
@@ -766,7 +797,8 @@ function apply(a, inverse) {
 function undo() { const a = hist.pop(); if (!a) return false; apply(a, true); redoStack.push(a); changed(); emit("undo", a); return true; }
 function redo() { const a = redoStack.pop(); if (!a) return false; apply(a, false); hist.push(a); changed(); emit("redo", a); return true; }
 function clearCity() {
-  [...bridges].forEach(dropBridge); [...blocks].forEach(dropBlock); terrain.clear(); if (pitMesh) rebuildTerrain();
+  [...bridges].forEach(dropBridge); [...blocks].forEach(dropBlock); terrain.clear();
+  baked.forEach(g => { bakeGroup && bakeGroup.remove(g); g.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }); baked.clear(); dirtyCells.clear(); if (pitMesh) rebuildTerrain();
   [...cells.keys()].forEach(k => { const [i, j] = k.split(",").map(Number); while (popFloor(i, j)); });
   hist.length = 0; redoStack.length = 0; changed();
 }
@@ -827,16 +859,19 @@ function setHover(h) {
   const key = x => x ? [x.kind, x.i, x.j, x.k, x.d, x.ref && (bridges.indexOf(x.ref) + "/" + blocks.indexOf(x.ref)), x.n, blockMode() ? [x.u, x.p && bsnap(x.p.x), x.p && bsnap(x.p.z)] : ""].join() : "";
   if (key(h) === key(hover)) return; hover = h; updateGhost(); emit("hover", hover);
 }
+let hiOverlay = null;
 function highlight(obj) {
   if (hiObj === obj) return;
-  if (hiObj) hiObj.traverse(o => { if (o.isLineSegments && o.userData.prevMat) { o.material = o.userData.prevMat; delete o.userData.prevMat; } });
-  hiObj = obj;
-  if (obj) obj.traverse(o => { if (o.isLineSegments) { o.userData.prevMat = o.material; o.material = hiLine; } });
+  if (hiOverlay) { scene.remove(hiOverlay); hiOverlay.geometry.dispose(); hiOverlay = null; }
+  hiObj = obj; if (!obj) return;
+  obj.updateMatrixWorld(true); const list = [];
+  obj.traverse(o => { if (o.isLineSegments) { const g = o.geometry.clone(); g.applyMatrix4(o.matrixWorld); list.push(g); } });
+  const g = merge(list); if (g) { hiOverlay = new THREE.LineSegments(g, hiLine); scene.add(hiOverlay); }
 }
 function updateGhost() {
   if (!scene) return;
   ghost.clear(); if (ghost.parent !== scene) { ghost.parent && ghost.parent.remove(ghost); scene.add(ghost); }
-  ghost.position.set(0, 0, 0); ghost.rotation.set(0, 0, 0); ghost.scale.set(1, 1, 1);
+  ghost.position.set(0, 0, 0); ghost.quaternion.identity(); ghost.scale.set(1, 1, 1);
   hoverBox.visible = false; ghost.visible = false; highlight(null);
   if (!hover) return req();
   if (hover.kind === "bridge") { highlight(hover.ref.obj); return req(); }
@@ -851,7 +886,7 @@ function updateGhost() {
     const u = f && def ? wingU(f, sel.t, sel.s, hover.u) : 0;
     if (f && def && !def.cap && !f.wings.some(x => x.d === hover.d && (x.u || 0) === u)) {
       ghost.add(wingObj(f, hover.d, sel.t, sel.s, 0, null, ghostFace, ghostLine, u));
-      f.obj.add(ghost); ghost.visible = true;                      // 预览挂在该层上，随它旋转缩放
+      f.obj.updateMatrixWorld(true); f.obj.matrixWorld.decompose(ghost.position, ghost.quaternion, ghost.scale); ghost.visible = true;   // 预览复制该层的位置朝向缩放
     }
     return req();
   }
@@ -932,6 +967,23 @@ function bindPointer(cv) {
 
 /* ---------------- 键盘（只在展开后生效） ---------------- */
 const holds = {}, panKeys = new Set();
+let tSide = null;
+/* 合并：沿所指侧面的朝向（世界坐标最近的轴向）找最近的一栋楼，取与这一层高度最接近的那层，
+   两面之间按所指这一层的楼型填满 */
+function mergeNeighbor({ i, j, k, d }) {
+  const f = stackOf(i, j)[k]; if (!f) return false;
+  const n = new THREE.Vector3(FACES[d][0], 0, FACES[d][1]).applyQuaternion(f.obj.quaternion);
+  const di = Math.abs(n.x) >= Math.abs(n.z) ? Math.sign(n.x) : 0, dj = di ? 0 : Math.sign(n.z);
+  const y0 = f.obj.position.y, y1 = y0 + f.h, yc = (y0 + y1) / 2;
+  for (let step = 1; step <= 4; step++) {
+    const ni = i + di * step, nj = j + dj * step, st = stackOf(ni, nj); if (!st.length) continue;
+    let best = -1, bd = Infinity;
+    st.forEach((g, q) => { const a = g.obj.position.y, b = a + g.h; if (b <= y0 + 1e-4 || a >= y1 - 1e-4) return; const dd = Math.abs((a + b) / 2 - yc); if (dd < bd) { bd = dd; best = q; } });
+    if (best >= 0) return connect([i, j, k], [ni, nj, best], f.t);
+    break;                                                  // 中间隔着的第一栋楼没有同高度的层，就不跨过去
+  }
+  emit("blocked", { i, j, k, d }); return false;
+}
 function typing(t) { return t && t.closest && t.closest("input,textarea,select,[contenteditable]"); }
 function startHold(k, fn) { if (holds[k]) return; fn(); holds[k] = { t: setTimeout(() => { holds[k].i = setInterval(fn, config.repeatEvery); }, config.repeatDelay) }; }
 function stopHold(k) { const h = holds[k]; if (!h) return; clearTimeout(h.t); clearInterval(h.i); delete holds[k]; }
@@ -960,7 +1012,7 @@ addEventListener("keydown", e => {
   if (k === " " || e.code === "Space") { e.preventDefault(); if (!e.repeat) { if (sel.tpl) doPlace(); else startHold("space", doPlace); } return; }
   if (k === "delete" || k === "backspace") { e.preventDefault(); if (!e.repeat) startHold("del", doDelete); return; }
   if (k === "w" || k === "a" || k === "s" || k === "d") { e.preventDefault(); panKeys.add(k); return; }
-  if (k === "t") { e.preventDefault(); if (!e.repeat) { tAnchor = hoverFloor(); updateLink(); } return; }
+  if (k === "t") { e.preventDefault(); if (!e.repeat) { tAnchor = hoverFloor(); tSide = hover && hover.kind === "side" ? { i: hover.i, j: hover.j, k: hover.k, d: hover.d } : null; updateLink(); } return; }
   if (k === "q") { e.preventDefault(); cycleType(-1); return; }
   if (k === "e") { e.preventDefault(); cycleType(1); return; }
   if (k === "z") { e.preventDefault(); cycleSize(-1); return; }
@@ -975,9 +1027,14 @@ addEventListener("keyup", e => {
   if (k === "delete" || k === "backspace") stopHold("del");
   panKeys.delete(k);
   if (k === "f") stopHold("f");
-  if (k === "t" && tAnchor) { const b = hoverFloor(); if (b) connect(tAnchor, b); tAnchor = null; updateLink(); }
+  if (k === "t" && tAnchor) {
+    const b = hoverFloor();
+    if (b && !(b[0] === tAnchor[0] && b[1] === tAnchor[1])) connect(tAnchor, b);
+    else if (tSide) mergeNeighbor(tSide);
+    tAnchor = null; tSide = null; updateLink();
+  }
 });
-addEventListener("blur", () => { stopHold("space"); stopHold("del"); stopHold("f"); panKeys.clear(); tAnchor = null; if (linkLine) updateLink(); });
+addEventListener("blur", () => { stopHold("space"); stopHold("del"); stopHold("f"); panKeys.clear(); tAnchor = null; tSide = null; if (linkLine) updateLink(); });
 
 /* ---------------- 昼夜：只跟随网页主题 ---------------- */
 function themeNight() { return document.documentElement.getAttribute("data-theme") === "dark"; }
@@ -986,7 +1043,6 @@ function refreshNight() { const n = themeNight(); if (n !== night || !scene) { n
 /* ---------------- 界面：右下角、展开窗口、底部选择栏 ---------------- */
 const UNDO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>';
 const REDO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg>';
-const TERRAIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M2 19l6-9 4 5 3-4 7 8z"/><path d="M8 10l1.5 2.2"/></svg>';
 const extraButtons = [];
 function addButton(b) { extraButtons.push(b); renderBar(); }
 function renderBar() {
@@ -997,7 +1053,6 @@ function renderBar() {
       return '<button class="cb-btn' + (sel.tpl === id ? ' on' : '') + '" data-tpl="' + id + '" aria-label="' + d.name + '">' + (d.icon || d.name.slice(0, 1)) + '</button>'; }).join("") + '</div>'
     + '<span class="cb-sep"></span><div class="cb-group">' + Object.keys(SIZES).map(s => '<button class="cb-btn cb-size' + (sel.s === s ? ' on' : '') + '" data-s="' + s + '">' + s + '</button>').join("") + '</div>'
     + '<span class="cb-sep"></span><div class="cb-group">'
-    + '<button class="cb-btn" data-act="terrain" aria-label="随机地形">' + TERRAIN + '</button>'
     + '<button class="cb-btn" data-act="undo" title="撤销 Ctrl+Z">' + UNDO + '</button>'
     + '<button class="cb-btn" data-act="redo" title="重做 Ctrl+Shift+Z">' + REDO + '</button>'
     + extraButtons.map((b, k) => '<button class="cb-btn" data-x="' + k + '" title="' + (b.title || "") + '">' + (b.icon || b.title || "") + '</button>').join("")
@@ -1106,13 +1161,28 @@ function buildUI() {
     const b = e.target.closest(".cb-btn"); if (!b) return;
     if (b.dataset.t) select(b.dataset.t); else if (b.dataset.s) select(null, b.dataset.s);
     else if (b.dataset.tpl) { sel.tpl = sel.tpl === b.dataset.tpl ? null : b.dataset.tpl; select(); }
-    else if (b.dataset.act === "terrain") randomTerrain();
     else if (b.dataset.act === "undo") undo(); else if (b.dataset.act === "redo") redo();
     else if (b.dataset.x != null) { const x = extraButtons[+b.dataset.x]; if (x && x.onClick) x.onClick(api); }
   });
   new ResizeObserver(resize).observe(corner); new ResizeObserver(resize).observe(popStage);
   new MutationObserver(() => { refreshNight(); applyPalette(); }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   renderBar();
+}
+
+/* 默认城区：地标放在中心附近的固定位置，四周撒随机楼；不进撤销栈 */
+function seedCity(seed) {
+  const r = rng(seed), c = HALF;
+  const marks = [["burj", 0, 0], ["shanghai", 4, -3], ["empire", -4, -2], ["taipei101", -3, 4], ["onewtc", 3, 4], ["chrysler", -7, 1],
+    ["cntower", 8, 1], ["petronas", -1, -8], ["willis", 1, 9]];
+  const used = new Set();
+  marks.forEach(([id, dx, dz]) => { placeTemplate(c + dx, c + dz, id, Math.floor(r() * 1e9));
+    for (let a = -1; a <= 3; a++) for (let b = -1; b <= 1; b++) used.add(K(c + dx + a, c + dz + b)); });
+  for (let n = 0, tries = 0; n < 70 && tries < 2000; tries++) {
+    const ang = r() * Math.PI * 2, rad2 = 3 + Math.pow(r(), .7) * 15, i = Math.round(c + Math.cos(ang) * rad2), j = Math.round(c + Math.sin(ang) * rad2);
+    if (!inBoard(i, j) || used.has(K(i, j)) || stackOf(i, j).length || levelOf(i, j)) continue;
+    used.add(K(i, j)); placeTemplate(i, j, "random", Math.floor(r() * 1e9)); n++;
+  }
+  hist.length = 0; redoStack.length = 0; changed();
 }
 
 /* ---------------- 启动：右下角可见（桌面端）时才创建 WebGL ---------------- */
@@ -1125,6 +1195,7 @@ function start() {
   mount(corner.querySelector(".city-host"));
   let saved = null; try { saved = localStorage.getItem(KEY_CITY); } catch (e) { }
   if (saved) load(); else setTerrain(genTerrain(20261007));
+  if (!cells.size && !blocks.length) seedCity(20261007);
   updateGhost();
   emit("ready", api);
 }
@@ -1140,7 +1211,7 @@ function start() {
    CityGame.three / scene / camera / renderer / cells / bridges / config / sizes / helpers */
 const api = {
   registerFloor, registerTemplate, placeTemplate, addButton, on, off, place, remove, addWing, removeWing, connect, dig, fill,
-  raise: fill, lower: dig, randomTerrain, genTerrain, group, placeBlock, removeBlock, undo, redo, clear: clearCity,
+  raise: fill, lower: dig, randomTerrain, genTerrain, group, placeBlock, removeBlock, mergeNeighbor, seedCity, undo, redo, clear: clearCity,
   select, expand, collapse, rotateBy, exportJSON, importJSON, config, sizes: SIZES, helpers, three: THREE,
   get floors() { return ORDER.map(id => FLOORS.get(id)); },
   get selected() { return Object.assign({}, sel); },
