@@ -333,14 +333,14 @@ const hist = [], redoStack = [];
 let sel = Object.assign({ t: "grid", s: "M", r: 0 }, (() => { try { return JSON.parse(localStorage.getItem(KEY_SEL)) || {}; } catch (e) { return {}; } })());
 if (!FLOORS.has(sel.t)) sel.t = "grid";
 sel.view = true; sel.tpl = null; sel.decal = null;
-if (!["S", "M", "W", "T"].includes(sel.wsz)) sel.wsz = "M"; if (sel.wlit == null) sel.wlit = 1;
-const decalType = () => sel.decal === "window" ? "win:" + sel.wsz + ":" + (sel.wlit ? 1 : 0) : sel.decal;                // 打开时默认观赏模式（鼠标按钮）
+if (!["S", "M", "L"].includes(sel.wsz)) sel.wsz = "M"; if (sel.wlit == null) sel.wlit = 1;
+const decalType = () => sel.decal === "window" ? "win:" + sel.wsz + ":" + (sel.wlit ? 1 : 0) + ":" + (sel.wrot ? 1 : 0) : sel.decal;                // 打开时默认观赏模式（鼠标按钮）
 const paneLight = { value: 0 }; let paneVis = null;
 let night = false, hover = null, expanded = false, tAnchor = null, drag = null;
 
 /* ---------------- three.js 场景 ---------------- */
 let facadeMat, renderer, scene, camera, hemi, sun, faceMat, lineMat, paneMat, ghostFace, ghostLine, hiLine;
-let terrainLine, grassMesh, waterMesh, waterLines, terrainNight = null, roadMat, roadMesh, roadLines, roadEdge, bakeGroup, ground, groundTop, digMask, pitMesh, pitEdges, pitMat, gridMinor, gridMajor, floorsGroup, bridgeGroup, hoverBox, ghost, pivot, linkLine, hitMeshes = [], hiObj = null;
+let terrainLine, grassMesh, waterMesh, waterLines, roadMat, roadMesh, roadLines, roadEdge, bakeGroup, ground, groundTop, digMask, pitMesh, pitEdges, pitMat, gridMinor, gridMajor, floorsGroup, bridgeGroup, hoverBox, ghost, pivot, linkLine, hitMeshes = [], hiObj = null;
 const cam = Object.assign({}, config.homeView), goal = { theta: cam.theta, phi: cam.phi };   // 打开网站时的视角
 
 function initThree() {
@@ -660,10 +660,16 @@ function bakeCell(key) {
   bakeGroup.add(grp); baked.set(key, grp); fadeDirty = true;
 }
 /* 贴图几何：在楼层本地坐标的第 d 个面上、沿面位置 u 处，返回 { lines, pane } */
-const WIN = { S: [.06, .06], M: [.1, .09], W: [.2, .09], T: [.07, .13] };      // 窗户宽 × 高（格）
+const WIN = { S: [.048, .064], M: [.072, .096], L: [.144, .096] };       // 窗户宽 × 高（格），中 = 「窗户层」立面上的窗
+const OLD_WIN = { W: "L:0", T: "L:1" };                                     // 旧尺寸 → 新尺寸:旋转
 const isWin = t => t === "window" || /^win:/.test(t || "");
-function winOf(t) { const m = /^win:(\w):(\d)$/.exec(t || ""); return m && WIN[m[1]] ? { s: m[1], lit: m[2] === "1" } : { s: "M", lit: true }; }
-const normDecal = t => t === "window" ? "win:M:1" : t;
+function winOf(t) {
+  let m = /^win:(\w):(\d)(?::(\d))?$/.exec(t || ""); if (!m) return { s: "M", lit: true, rot: false };
+  let [s, rot] = OLD_WIN[m[1]] ? OLD_WIN[m[1]].split(":") : [m[1], m[3] || "0"];
+  return { s: WIN[s] ? s : "M", lit: m[2] === "1", rot: rot === "1" };
+}
+function winSize(t, h) { const w = winOf(t), [a, b] = WIN[w.s]; return w.rot ? [b, Math.min(a, h * .72)] : [a, Math.min(b, h * .72)]; }
+const normDecal = t => { if (!isWin(t)) return t; const w = winOf(t); return "win:" + w.s + ":" + (w.lit ? 1 : 0) + ":" + (w.rot ? 1 : 0); };
 function decalGeo(f, d, u, type) {
   const g = floorGeo(f.t, f.s, f.v); if (!g.solid.boundingBox) g.solid.computeBoundingBox();
   const bb = g.solid.boundingBox, [nx, nz] = FACES[d], hn = (nx ? Math.max(-bb.min.x, bb.max.x) : Math.max(-bb.min.z, bb.max.z)) + .005, tx = -nz, tz = nx, h = f.h;
@@ -673,7 +679,7 @@ function decalGeo(f, d, u, type) {
   if (type === "door") { pw = .1; y0 = 0; y1 = Math.min(h * .9, .15);
     rect(u - pw / 2, u + pw / 2, y0, y1, true); rect(u - pw / 2 + .015, u + pw / 2 - .015, y0 + .015, y1 - .015, true);
     L.push(P(u + pw / 2 - .03, y1 * .5), P(u + pw / 2 - .03, y1 * .5 + .02)); }
-  else { const w = winOf(type), [ww, wh] = WIN[w.s], hh = Math.min(wh, h * .84); pw = ww; y0 = h / 2 - hh / 2; y1 = h / 2 + hh / 2;
+  else { const [ww, wh] = winSize(type, h); pw = ww; y0 = h * .2; y1 = y0 + wh;            // 窗台对齐在层高 20% 处
     rect(u - pw / 2, u + pw / 2, y0, y1); }
   const q = [P(u - pw / 2, y0), P(u + pw / 2, y0), P(u + pw / 2, y1), P(u - pw / 2, y0), P(u + pw / 2, y1), P(u - pw / 2, y1)], c3 = type === "door" ? [.85, .62, .32] : [1, .82, .42];
   const pos = [], col = []; q.forEach(v => { pos.push(...v); col.push(...c3); });
@@ -681,7 +687,7 @@ function decalGeo(f, d, u, type) {
   return { lines: lines(L), pane: type === "door" || winOf(type).lit ? pg : null };     // 关灯的窗只有外框
 }
 function decalU(f, type, u) {
-  const g = floorGeo(f.t, f.s, f.v), lim = Math.max(0, g.w / 2 - (type === "door" ? .06 : WIN[winOf(type).s][0] / 2 + .01));
+  const g = floorGeo(f.t, f.s, f.v), lim = Math.max(0, g.w / 2 - (type === "door" ? .06 : winSize(type, 1)[0] / 2 + .01));
   return Math.max(-lim, Math.min(lim, Math.round((u || 0) / .04) * .04));
 }
 function decalObj(f, dc, lmat = lineMat, ghostMat) {
@@ -1208,7 +1214,6 @@ function importJSON(d) {
     (d.wadd || []).forEach(k => water.add(k)); (d.wdel || []).forEach(k => water.delete(k));
     (d.gadd || []).forEach(k => grass.add(k)); (d.gdel || []).forEach(k => grass.delete(k));
   } else {
-    ((d && d.digs) || []).forEach(([i, j, n]) => { if (n > 0) terrain.set(K(i, j), -Math.min(config.digMax, n)); });     // v3：只有坑
     ((d && d.terrain) || []).forEach(([i, j, h]) => { if (h) terrain.set(K(i, j), lv(h)); });
     ((d && d.water) || []).forEach(k => water.add(k)); ((d && d.grass) || []).forEach(k => grass.add(k));
   }
@@ -1247,7 +1252,6 @@ function migrateWorld() {
   hist.length = 0; redoStack.length = 0; changed();
 }
 function save() { try { localStorage.setItem(KEY_CITY, JSON.stringify(exportJSON())); } catch (e) { } }
-function load() { try { const d = JSON.parse(localStorage.getItem(KEY_CITY)); if (d) importJSON(d); } catch (e) { } }
 
 /* ---------------- 拾取：顶面 / 侧面 / 侧翼 / 连廊 / 地面 ---------------- */
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -1466,7 +1470,7 @@ addEventListener("keydown", e => {
   if (k === "e") { e.preventDefault(); cycleType(1); return; }
   if (k === "z") { e.preventDefault(); cycleSize(-1); return; }
   if (k === "c") { e.preventDefault(); cycleSize(1); return; }
-  if (k === "r") { e.preventDefault(); rotateSel(); return; }
+  if (k === "r") { e.preventDefault(); if (sel.decal === "window") { sel.wrot = !sel.wrot; select(); } else rotateSel(); return; }
   if (k === "f") { e.preventDefault(); if (!e.repeat) startHold("f", () => { if (hover && hover.kind === "top" && !stackOf(hover.i, hover.j).length) fill(hover.i, hover.j); }); return; }
 }, true);
 addEventListener("keyup", e => {
@@ -1567,8 +1571,8 @@ function renderBar() {
       + [[1, "开灯", '<rect x="7.5" y="4.5" width="9" height="15" fill="currentColor" fill-opacity=".35"/>'], [0, "关灯", '<rect x="7.5" y="4.5" width="9" height="15"/>']]
         .map(([v, n, p]) => '<button class="cb-btn' + ((sel.wlit ? 1 : 0) === v ? ' on' : '') + '" data-wl="' + v + '" aria-label="' + n + '">' + DI(p) + '</button>').join("")
       + '<span class="cb-sep"></span>'
-      + [["S", "小", [9, 9, 6, 6]], ["M", "中", [7, 8, 10, 8]], ["W", "宽", [3, 8, 18, 8]], ["T", "高", [8.5, 4, 7, 16]]]
-        .map(([v, n, [x, y, w, h]]) => '<button class="cb-btn' + (sel.wsz === v ? ' on' : '') + '" data-ws="' + v + '" aria-label="' + n + '">' + DI('<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '"/>') + '</button>').join("")
+      + [["S", "小", 5, 7], ["M", "中", 8, 11], ["L", "大", 16, 11]]
+        .map(([v, n, a, b]) => { const [w, h] = sel.wrot ? [b, a] : [a, b], x = 12 - w / 2, y = 12 - h / 2; return '<button class="cb-btn' + (sel.wsz === v ? ' on' : '') + '" data-ws="' + v + '" aria-label="' + n + '">' + DI('<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '"/>') + '</button>'; }).join("")
       + '</div>' : '')
     + extraButtons.map((b, k) => '<button class="cb-btn" data-x="' + k + '" title="' + (b.title || "") + '">' + (b.icon || b.title || "") + '</button>').join("")
     + '</div>';
@@ -1759,8 +1763,7 @@ async function fetchPublished() {
 async function loadCity() {
   let local = null; try { local = JSON.parse(localStorage.getItem(KEY_CITY)); } catch (e) { }
   const isEdited = d => !!d && (d.edited != null ? !!d.edited : !d.seeded);
-  const oldSeed = local && !local.roads && (local.cells || []).length === 88 && (local.cells || []).reduce((a, c) => a + c[2].length, 0) === 3803;
-  const stale = local && !isEdited(local) && (oldSeed || (local.seeded && local.seeded < SEED_VER));   // 没改动过的旧版默认城区：换成新版
+  const stale = local && !isEdited(local) && local.seeded && local.seeded < SEED_VER;   // 没改动过的旧版默认城区：换成新版
   const fresh = () => { clearCity(); setWorld(genWorld(WORLD_SEED)); wv = WORLD_VER; seedCity(WORLD_SEED); };
   const done = () => { if (wv < WORLD_VER) migrateWorld(); if (!cells.size && !blocks.length) seedCity(WORLD_SEED); updateGhost(); save(); };
   if (local && !stale) { importJSON(local); done(); }
