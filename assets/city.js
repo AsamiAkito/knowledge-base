@@ -33,6 +33,7 @@ const config = {
   rotStep: 15,                                    // R 键每次顺时针旋转的角度
   damping: .22,                                   // 旋转缓动（0–1，越大越跟手）
   recenterNear: 30,
+  homeView: { tx: -1, tz: -1, theta: 45, phi: 37, dist: 43 },   // 打开网站时右下角的视角：拉近看中心城区
   fadeNear: 12, fadeReach: 6,                     // 相机距离小于 fadeNear 才虚化；只虚化离镜头 fadeReach 格以内挡视线的楼                               // 相机距离小于它时视野可移到棋盘任意位置，大于它逐步回中
   thickness: 3,                                   // 棋盘厚度（格）
   digLevel: .16, digMax: 3, raiseMax: 300,         // 地面每层高度（= 一层楼高）、最多下挖 / 升高几层（山可以比最高的楼还高）
@@ -340,7 +341,7 @@ let night = false, hover = null, expanded = false, tAnchor = null, drag = null;
 /* ---------------- three.js 场景 ---------------- */
 let facadeMat, renderer, scene, camera, hemi, sun, faceMat, lineMat, paneMat, ghostFace, ghostLine, hiLine;
 let terrainLine, grassMesh, waterMesh, waterLines, terrainNight = null, roadMat, roadMesh, roadLines, roadEdge, bakeGroup, ground, groundTop, digMask, pitMesh, pitEdges, pitMat, gridMinor, gridMajor, floorsGroup, bridgeGroup, hoverBox, ghost, pivot, linkLine, hitMeshes = [], hiObj = null;
-const cam = { tx: 0, tz: 0, theta: 45, phi: 38, dist: 360 }, goal = { theta: 45, phi: 38 };   // 默认全览整块棋盘
+const cam = Object.assign({}, config.homeView), goal = { theta: cam.theta, phi: cam.phi };   // 打开网站时的视角
 
 function initThree() {
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -1787,6 +1788,8 @@ const api = {
   addRoad, removeRoad, addGrass, removeGrass, addWater, removeWater, genWorld, setWorld, addDecal, removeDecal, raise: fill, lower: dig, randomTerrain, genTerrain, group, placeBlock, removeBlock, mergeNeighbor, seedCity, undo, redo, clear: clearCity,
   select, expand, collapse, rotateBy, exportJSON, importJSON, publishJSON, migrateWorld, addSpurs, setPure, setView, config,
   jumpTo, tickCars: dt => stepCars(dt),
+  setCamera(o) { Object.assign(cam, o); if (o.theta != null) goal.theta = cam.theta; if (o.phi != null) goal.phi = cam.phi; orbit = null; updateCamera(); },
+  get cam() { return Object.assign({}, cam); },
   setHour(h) { hourFix = h == null ? null : ((+h % 24) + 24) % 24; updateClock(true); },
   get hour() { return cityHour(); }, get started() { return started; }, get cars() { return cars; }, sizes: SIZES, helpers, three: THREE,
   get floors() { return ORDER.map(id => FLOORS.get(id)); },
