@@ -2137,24 +2137,24 @@ async function uploadPendingPhotos(cfg,headers){
 let hlPos=null;
 function moveHLine(){
   const mark=$("#hlineMark");if(!mark)return;
-  const views=["feed","kb","fav"];
-  const i=Math.max(0,views.indexOf(state.view));
-  const w=mark.offsetWidth||280, W=innerWidth;
+  const i=Math.max(0,["feed","kb","fav"].indexOf(state.view));
+  /* 停靠点：底边栏对应那一栏（动态 → LATEST，知识库 → READING，收藏 → VIDEOS）的左缘，宽度与该栏相同 */
+  const fb=$("#footBand"),cell=fb&&fb.children[i];if(!cell)return;
+  const r=cell.getBoundingClientRect(),w=Math.round(r.width),W=innerWidth;
   const wall=W*0.8;                               /* 竖分割线的位置 */
-  const bounce=Math.max(80,W*0.06);               /* 碰壁后弹回的长度 */
-  const left=Math.max(22,W*0.08);
-  const right=Math.max(left,wall-w-bounce);       /* 收藏的停靠点：弹回一个 bounce */
-  const to=left+(right-left)*(i/(views.length-1));
+  const bounce=Math.max(80,W*0.06);               /* 越过停靠点再弹回的长度 */
+  const to=Math.round(r.left);
+  mark.style.width=w+"px";
   const from=hlPos;hlPos=to;
-  mark.style.transform="translateX("+Math.round(to)+"px)";
+  mark.style.transform="translateX("+to+"px)";
   if(from===null||Math.abs(from-to)<1||!mark.animate)return;
   const dir=to>from?1:-1;
-  const peak=Math.round(to+dir*bounce);           /* 收藏时 peak+w 正好等于 wall */
-  mark.getAnimations().forEach(a=>a.cancel());    /* avoid pile-up on rapid switching */
+  const peak=Math.round(dir>0?Math.min(to+bounce,wall-w):Math.max(0,to-bounce));   /* 往右不越过竖分割线 */
+  mark.getAnimations().forEach(a=>a.cancel());    /* 连续切换时不叠加 */
   mark.animate([
     {transform:"translateX("+Math.round(from)+"px)",easing:"cubic-bezier(.35,0,.2,1)"},
     {transform:"translateX("+peak+"px)",offset:.56,easing:"cubic-bezier(.3,0,.25,1)"},
-    {transform:"translateX("+Math.round(to)+"px)"}
+    {transform:"translateX("+to+"px)"}
   ],{duration:900});
 }
 addEventListener("resize",()=>{hlPos=null;moveHLine();});
@@ -2200,7 +2200,7 @@ function renderFootBand(){
 /* 进入动效：只在切换板块 / 打开详情时播放，点赞评论等局部刷新不重播 */
 let _enterKey="";
 function afterRender(){
-  renderFootBand();if(_routeReady)syncRoute();
+  renderFootBand();moveHLine();if(_routeReady)syncRoute();
   const prev=_enterKey.split("|"),cur=[state.view,state.feedOpen,state.feedMonth,state.kbSel,state.editingFile,state.favFolder,state.favItem];
   const k=cur.join("|");if(k===_enterKey)return;_enterKey=k;
   let targets;
