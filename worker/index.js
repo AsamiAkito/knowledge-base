@@ -3,7 +3,7 @@
    数据存在一个 Durable Object（自带 SQLite，免费版可用，部署时自动创建，不需要在后台建数据库）。
 
    GET    /api/social?ids=a,b&vid=…     各条动态的点赞数、我是否赞过、评论列表
-   POST   /api/comment  {post,parent,nick,text,vid}   发评论 / 回复（带站主令牌时标记为作者）
+   POST   /api/comment  {post,parent,nick,site,text,vid}   发评论 / 回复（site 可不填；带站主令牌时标记为作者）
    POST   /api/like     {target:"p:<动态>"|"c:<评论>", vid, on}
    DELETE /api/comment?id=…            删除评论及其回复（需站主 GitHub 令牌） */
 import { DurableObject } from "cloudflare:workers";
@@ -18,6 +18,7 @@ export class Social extends DurableObject {
     super(ctx, env);
     this.sql = ctx.storage.sql;
     this.sql.exec(`CREATE TABLE IF NOT EXISTS comments(id TEXT PRIMARY KEY, post TEXT NOT NULL, parent TEXT, nick TEXT, text TEXT, ts INTEGER, ip TEXT, owner INTEGER DEFAULT 0)`);
+    try { this.sql.exec(`ALTER TABLE comments ADD COLUMN site TEXT`); } catch (e) { }          // 新增「网站」列（已存在时忽略）
     this.sql.exec(`CREATE INDEX IF NOT EXISTS comments_post ON comments(post)`);
     this.sql.exec(`CREATE INDEX IF NOT EXISTS comments_ip ON comments(ip, ts)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS likes(target TEXT NOT NULL, vid TEXT NOT NULL, ts INTEGER, PRIMARY KEY(target, vid))`);
@@ -41,7 +42,7 @@ export class Social extends DurableObject {
     const posts = {};
     ids.forEach(id => {
       const likes = this.count("p:" + id), liked = VID.test(vid) && this.has("p:" + id, vid);
-      const comments = this.sql.exec(`SELECT id, parent, nick, text, ts, owner FROM comments WHERE post = ? ORDER BY ts`, id).toArray()
+      const comments = this.sql.exec(`SELECT id, parent, nick, text, ts, owner, site FROM comments WHERE post = ? ORDER BY ts`, id).toArray()
         .map(c => ({ ...c, owner: !!c.owner, likes: this.count("c:" + c.id), liked: VID.test(vid) && this.has("c:" + c.id, vid) }));
       posts[id] = { likes, liked, comments };
     });
@@ -53,14 +54,18 @@ export class Social extends DurableObject {
     const post = String(b.post || ""), text = String(b.text || "").trim().slice(0, 300), nick = String(b.nick || "").trim().slice(0, 20) || "访客";
     if (!ID.test(post) || !text) return bad("内容不完整");
     let parent = b.parent ? String(b.parent) : null;
+    let site = String(b.site || "").trim().slice(0, 120);                       // 网站（可不填）：只收 http(s) 地址
+    if (site && !/^https?:\/\//i.test(site)) site = "https://" + site;
+    try { site = site ? new URL(site).href : ""; } catch (e) { site = ""; }
+    if (site && !/^https?:/.test(site)) site = "";
     if (parent && !this.sql.exec(`SELECT 1 FROM comments WHERE id = ? AND post = ?`, parent, post).toArray().length) parent = null;
     /* 限流：同一来源 1 分钟最多 3 条，1 天最多 50 条 */
     const recent = (ms) => this.sql.exec(`SELECT COUNT(*) AS n FROM comments WHERE ip = ? AND ts > ?`, ip, now - ms).one().n;
     if (recent(60e3) >= 3 || recent(864e5) >= 50) return bad("发得太快了，稍后再试", 429);
     const owner = await this.isOwner(req);
     const id = now.toString(36) + Math.random().toString(36).slice(2, 7);
-    this.sql.exec(`INSERT INTO comments(id, post, parent, nick, text, ts, ip, owner) VALUES (?,?,?,?,?,?,?,?)`, id, post, parent, nick, text, now, ip, owner ? 1 : 0);
-    return json({ comment: { id, parent, nick, text, ts: now, owner, likes: 0, liked: false } });
+    this.sql.exec(`INSERT INTO comments(id, post, parent, nick, text, ts, ip, owner, site) VALUES (?,?,?,?,?,?,?,?,?)`, id, post, parent, nick, text, now, ip, owner ? 1 : 0, site || null);
+    return json({ comment: { id, parent, nick, text, ts: now, owner, site: site || null, likes: 0, liked: false } });
   }
 
   async like(req) {

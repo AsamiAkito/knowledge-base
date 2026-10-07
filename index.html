@@ -1,5 +1,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" id="favicon" href="assets/avatar.jpg" />
+<link rel="apple-touch-icon" id="touchicon" href="assets/avatar.jpg" />
 <title>秋渡的空间 · 动态 / 知识库 / 收藏</title>
 
 <!--
@@ -217,6 +219,7 @@
   .pv-foot .cmt-form{flex:1;margin:0}
   .pv-foot .cmt-form input{min-width:0}
   .pv-foot .cmt-form input.nick{flex:0 0 76px;width:76px}
+  .pv-foot .cmt-form input.site{flex:0 0 76px;width:76px}
   .pv-close{position:fixed;top:18px;right:20px;width:40px;height:40px;border-radius:50%;border:0;cursor:pointer;
     background:rgba(255,255,255,.14);color:#fff;font-size:24px;line-height:40px;padding:0;z-index:2}
   .pv-close:hover{background:rgba(255,255,255,.26)}
@@ -247,6 +250,10 @@
   .cmt .c-text{font-size:14px;margin-top:2px;word-wrap:break-word}
   .cmt-form{display:flex;gap:9px;margin-top:8px}
   .cmt-form input.nick{flex:0 0 96px;width:96px}
+  .cmt-form input.site{flex:0 0 120px;width:120px}
+  a.avatar.c-site{position:relative;overflow:hidden;text-decoration:none;color:inherit;cursor:pointer}
+  a.avatar.c-site img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:var(--card)}
+  a.avatar.c-site:hover{box-shadow:0 0 0 2px var(--accent)}
   .cmt .c-row{display:flex;align-items:flex-start;gap:10px}
   .cmt .c-row .c-text{flex:1;min-width:0}
   .c-like{display:inline-flex;align-items:center;gap:4px;flex:none;border:0;background:transparent;cursor:pointer;padding:2px 0;
@@ -881,6 +888,8 @@
     .icon-btn,.btn{min-height:40px}
     input,textarea,select{font-size:16px!important}
     .cmt-form input.nick{flex-basis:84px;width:84px}
+    .cmt-form{flex-wrap:wrap}.cmt-form input.site{flex:1 1 120px;width:auto}
+    .comments .cmt-form input[name="text"]{flex:1 1 100%}
     .foot-band{padding-left:var(--s4);padding-right:var(--s4)}
   }
   @media(max-width:420px){.fav-grid{grid-template-columns:minmax(0,1fr)}}
@@ -1123,8 +1132,16 @@ async function loadSocial(){
 }
 const fmtTs=t=>{const d=new Date(t),p=n=>String(n).padStart(2,"0");return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+" "+p(d.getHours())+":"+p(d.getMinutes());};
 const sp=id=>social.posts[id]||(social.posts[id]={likes:0,liked:false,comments:[]});
+/* 网页图标跟着个人头像走 */
+function setFavicon(){const a=(DATA.profile||{}).avatar;const href=a&&isImg(a)?a:"assets/avatar.jpg";["#favicon","#touchicon"].forEach(q=>{const l=$(q);if(l&&l.getAttribute("href")!==href)l.setAttribute("href",href);});}
+/* 评论者留了网站：头像用那个网站的图标（取不到就退回昵称首字），点头像打开网站 */
+function siteIcon(u){try{const o=new URL(u);return {href:o.href,icon:o.origin+"/favicon.ico",alt:"https://icons.duckduckgo.com/ip3/"+o.hostname+".ico",host:o.hostname};}catch(e){return null;}}
+function cmtAvatar(c){const ini=esc(nickInitial(c.name||"访客")),s=c.site&&/^https?:\/\//.test(c.site)?siteIcon(c.site):null;
+  if(!s)return '<div class="avatar">'+ini+'</div>';
+  return '<a class="avatar c-site" href="'+esc(s.href)+'" target="_blank" rel="noopener nofollow ugc" title="'+esc(s.host)+'">'+ini
+    +'<img src="'+esc(s.icon)+'" data-alt="'+esc(s.alt)+'" alt="" referrerpolicy="no-referrer" onload="if(this.naturalWidth<8)this.onerror()" onerror="if(this.dataset.alt){this.src=this.dataset.alt;this.removeAttribute(\'data-alt\')}else this.remove()"></a>';}
 function feedComments(id){
-  if(social.ok)return sp(id).comments.map(c=>({id:c.id,name:c.nick,text:c.text,when:fmtTs(c.ts),likes:c.likes,liked:c.liked,parent:c.parent,owner:c.owner,remote:1}));
+  if(social.ok)return sp(id).comments.map(c=>({id:c.id,name:c.nick,site:c.site,text:c.text,when:fmtTs(c.ts),likes:c.likes,liked:c.liked,parent:c.parent,owner:c.owner,remote:1}));
   return (store.cmts[id]||[]).slice();
 }
 function postLiked(id){return social.ok?!!sp(id).liked:!!store.likes[id];}
@@ -1135,7 +1152,7 @@ function cmtHTML(c,pid,to,replies){
   const name=c.name||"访客",liked=c.remote?!!c.liked:!!store.cmtLikes[c.id],n=c.remote?(c.likes||0):(c.likes||0)+(liked?1:0);
   const del=state.editMode?'<button class="c-del" data-action="cmt-del" data-id="'+pid+'" data-cid="'+c.id+'">删除</button>':'';
   const reply=c.remote?'<button class="c-reply" data-action="cmt-reply" data-id="'+pid+'" data-cid="'+c.id+'" data-name="'+esc(name)+'">回复</button>':'';
-  return '<div class="cmt"><div class="avatar">'+esc(nickInitial(name))+'</div><div class="c-main"><div class="c-name">'+esc(name)+(c.owner?'<em class="c-owner">作者</em>':'')+'<span>'+esc(c.when||'')+'</span>'+reply+del+'</div>'
+  return '<div class="cmt">'+cmtAvatar(c)+'<div class="c-main"><div class="c-name">'+esc(name)+(c.owner?'<em class="c-owner">作者</em>':'')+'<span>'+esc(c.when||'')+'</span>'+reply+del+'</div>'
     +'<div class="c-row"><div class="c-text">'+(to?'<span class="c-to">@'+esc(to)+'</span>':'')+esc(c.text)+'</div><button class="c-like'+(liked?' liked':'')+'" data-action="cmt-like" data-id="'+pid+'" data-cid="'+c.id+'" title="赞">'+HEART+'<span>'+(n||'')+'</span></button></div>'
     +(replies||'')+'</div></div>';
 }
@@ -1152,7 +1169,7 @@ function cmtFormHTML(pid,ph,btn){
   const rt=state.replyTo&&state.replyTo.pid===pid?state.replyTo:null;
   if(rt)ph="回复 @"+rt.name+"…";
   return (rt?'<div class="cmt-replying">回复 @'+esc(rt.name)+'<button type="button" data-action="cmt-reply-cancel">取消</button></div>':'')
-    +'<form class="cmt-form" data-action="feed-comment" data-id="'+pid+'"><input class="nick" name="nick" placeholder="你的名字" autocomplete="nickname" maxlength="20" value="'+esc(store.nick||"")+'"/>'
+    +'<form class="cmt-form" data-action="feed-comment" data-id="'+pid+'"><input class="nick" name="nick" placeholder="你的名字" autocomplete="nickname" maxlength="20" value="'+esc(store.nick||"")+'"/><input class="site" name="site" placeholder="网站" autocomplete="url" maxlength="120" value="'+esc(store.site||"")+'"/>'
     +'<input name="text" placeholder="'+ph+'" autocomplete="off" maxlength="300"/>'+(btn?'<button class="btn" type="submit">发送</button>':'')+'</form>';
 }
 function likeCount(id){return social.ok?sp(id).likes:(store.likes[id]?1:0);}
@@ -1685,7 +1702,7 @@ function openProfile(){
     +'<div class="field"><label>昵称</label><input name="name" value="'+esc(p.name||"")+'"></div>'
     +'<div class="field"><label>头像（图片路径或网址）</label><input name="avatar" value="'+esc(p.avatar||"")+'" placeholder="assets/avatar.jpg 或 https://…"></div>'
     +'<div class="modal-actions"><button type="button" class="btn ghost" data-action="modal-close">取消</button><button type="submit" class="btn">保存</button></div></form>');
-  bg.querySelector("#pf").addEventListener("submit",e=>{e.preventDefault();const fd=new FormData(e.target);DATA.profile={name:(fd.get("name")||"我").trim()||"我",avatar:(fd.get("avatar")||"").trim()};saveDraft();bg.remove();render();toast("已更新资料");});
+  bg.querySelector("#pf").addEventListener("submit",e=>{e.preventDefault();const fd=new FormData(e.target);DATA.profile={name:(fd.get("name")||"我").trim()||"我",avatar:(fd.get("avatar")||"").trim()};saveDraft();bg.remove();setFavicon();render();toast("已更新资料");});
 }
 function openAddFav(){
   const bg=modal('<h3>收藏一个网页 / 视频</h3><form id="addForm">'
@@ -1841,16 +1858,17 @@ document.addEventListener("submit",e=>{
   const f=e.target.closest('[data-action="feed-comment"]');if(!f)return;e.preventDefault();
   const id=f.dataset.id,inp=f.querySelector('input[name="text"]'),text=(inp.value||"").trim();if(!text)return;
   const nk=f.querySelector('input[name="nick"]'),nick=(nk&&nk.value||"").trim().slice(0,20);
-  store.nick=nick;saveStore();                       /* 记住昵称，下次自动填好 */
+  const st=f.querySelector('input[name="site"]'),site=(st&&st.value||"").trim().slice(0,120);
+  store.nick=nick;store.site=site;saveStore();       /* 记住昵称和网站，下次自动填好 */
   const after=()=>{renderFeed();if(state.pv){pvSide();const sc=$("#pv .pv-scroll");if(sc)sc.scrollTop=sc.scrollHeight;const ip=$('#pv .cmt-form input[name="text"]');if(ip)ip.focus();}};
   if(social.ok){
     const parent=state.replyTo&&state.replyTo.pid===id?state.replyTo.cid:null,btn=f.querySelector("button[type=submit]");inp.disabled=true;if(btn)btn.disabled=true;
-    api("comment",{method:"POST",headers:ownerAuth(),body:JSON.stringify({post:id,parent,nick:nick||(ownerUnlocked?(DATA.profile||{}).name:"")||"访客",text,vid:VID})})
+    api("comment",{method:"POST",headers:ownerAuth(),body:JSON.stringify({post:id,parent,site,nick:nick||(ownerUnlocked?(DATA.profile||{}).name:"")||"访客",text,vid:VID})})
       .then(j=>{sp(id).comments.push(j.comment);state.replyTo=null;after();})
       .catch(e=>{toast(e.message);inp.disabled=false;if(btn)btn.disabled=false;});
     return;
   }
-  (store.cmts[id]=store.cmts[id]||[]).push({id:uid(),name:nick||"访客",text,when:now()});saveStore();renderFeed();
+  (store.cmts[id]=store.cmts[id]||[]).push({id:uid(),name:nick||"访客",site:site&&/^https?:\/\//.test(site)?site:(site?"https://"+site:""),text,when:now()});saveStore();renderFeed();
   if(state.pv){pvSide();const sc=$("#pv .pv-scroll");if(sc)sc.scrollTop=sc.scrollHeight;const ip=$('#pv .cmt-form input[name="text"]');if(ip)ip.focus();}
 });
 
@@ -2373,6 +2391,7 @@ async function boot(){
   }
   ensureIds();
   if(!DATA.profile)DATA.profile={name:"我",avatar:""};
+  setFavicon();
   if(!Array.isArray(DATA.photos))DATA.photos=[];
   if(!Array.isArray(DATA.contacts)||!DATA.contacts.length)DATA.contacts=JSON.parse(JSON.stringify(CONTACT_SEED));
   state.expanded=new Set();(function w(nodes){nodes.forEach(n=>{if(n.type==="folder"){state.expanded.add(n.id);w(n.children||[]);}});})(DATA.kb);
