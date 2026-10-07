@@ -28,6 +28,8 @@ const GR = 1 / 6;
 const gw = w => Math.max(GR, Math.round(w / GR + 1e-9) * GR);            // 宽度取整到网格
 const SIZES = { S: 3 * GR, M: 4 * GR, L: 5 * GR };   // 楼层边长：3 / 4 / 5 个网格
 const KEY_CITY = "myspace-city", KEY_SEL = "myspace-city-sel";
+/* 共享城市的同步状态：base = 服务器上（我已知的）每条记录，rev = 已同步到的版本 */
+const share = { on: false, rev: 0, base: new Map(), busy: false, t: 0 };
 const config = {
   phiMin: 12, phiMax: 85,                         // 俯仰角范围（度，离地面的仰角）
   thetaRange: null,                               // 水平旋转范围 [min,max]（度），null 为不限
@@ -1456,7 +1458,7 @@ function clearCity() {
   hist.length = 0; redoStack.length = 0; changed();
 }
 let saveT = 0;
-function changed() { updateGhost(); req(); clearTimeout(saveT); saveT = setTimeout(save, 300); emit("change"); }
+function changed() { updateGhost(); req(); clearTimeout(saveT); saveT = setTimeout(save, 300); if (share.on && !share.applying) { share.dirty = true; shareKick(1200); } emit("change"); }
 function exportJSON() {
   const out = [];
   cells.forEach((st, k) => { const [i, j] = k.split(",").map(Number);
@@ -2053,18 +2055,19 @@ function start() {
   if (window.IntersectionObserver) new IntersectionObserver(es => { cityVisible = es[es.length - 1].isIntersecting; }).observe(corner);
   loadCity();
 }
-/* 访客第一次打开载入我发布的城市，之后他们的改动只存在他们自己的浏览器里；
+/* 没连上共享城市时（本地预览等）的退路：访客第一次打开载入我发布的城市，之后改动只存在本机；
    没改动过的访客在我重新发布后会换成新版本 */
 async function fetchPublished() {
   try { const r = await fetch("data.json?_=" + Date.now(), { cache: "no-store" }); if (!r.ok) return null;
     const j = await r.json(); return j && j.city ? (typeof j.city === "string" ? JSON.parse(j.city) : j.city) : null; } catch (e) { return null; }
 }
+function afterLoad() { if (wv < 2) migrateWorld(); if (wv < 3) { trimRiverRoads(); wv = 3; } if (wv < 5) { windowAll(); reseatBlocks(); wv = 5; } if (!cells.size && !blocks.length) seedCity(WORLD_SEED); updateGhost(); save(); }
 async function loadCity() {
   let local = null; try { local = JSON.parse(localStorage.getItem(KEY_CITY)); } catch (e) { }
   const isEdited = d => !!d && (d.edited != null ? !!d.edited : !d.seeded);
   const stale = local && !isEdited(local) && local.seeded && local.seeded < SEED_VER;   // 没改动过的旧版默认城区：换成新版
   const fresh = () => { clearCity(); setWorld(genWorld(WORLD_SEED)); wv = WORLD_VER; seedCity(WORLD_SEED); };
-  const done = () => { if (wv < 2) migrateWorld(); if (wv < 3) { trimRiverRoads(); wv = 3; } if (wv < 5) { windowAll(); reseatBlocks(); wv = 5; } if (!cells.size && !blocks.length) seedCity(WORLD_SEED); updateGhost(); save(); };
+  const done = afterLoad;
   if (local && !stale) { importJSON(local); done(); }
   if (!isEdited(local)) {
     const pub = await fetchPublished();
@@ -2072,6 +2075,126 @@ async function loadCity() {
     else if (!local || stale) fresh();
   }
   emit("ready", api);
+  shareStart();
+}
+
+/* ---------------- 共享城市 ----------------
+   所有访客看到、改的是同一座城（存在 Cloudflare Worker 的 Durable Object 里，见 worker/index.js）。
+   城市拆成一条条记录：c:i,j 一格的楼（整栈）· t:i,j 一列地块（与生成世界不同的才存）· r:i,j 路 ·
+   b:x,z,y 方块 / 天线 · g:a,b 连廊 · m:wv 存档版本。改动后约 1 秒把有变化的记录传上去；
+   打开城市时每 4 秒、平时每 30 秒取别人的改动，只重建变化的格子。连不上服务器时仍只存在本机。 */
+const fx = n => +(+n).toFixed(4);
+function entries() {
+  const d = exportJSON(), m = new Map();
+  d.cells.forEach(([i, j, st]) => m.set("c:" + i + "," + j, JSON.stringify(st)));
+  d.cdiff.forEach(([i, j, fl]) => m.set("t:" + i + "," + j, JSON.stringify(fl)));
+  d.roads.forEach(([i, j]) => m.set("r:" + i + "," + j, "1"));
+  d.blocks.forEach(([x, z, y, t, v]) => m.set("b:" + fx(x) + "," + fx(z) + "," + fx(y), JSON.stringify([t, v || 0])));
+  d.bridges.forEach(b => m.set("g:" + b.slice(0, 6).join(","), JSON.stringify(b.slice(6))));
+  m.set("m:wv", String(wv));
+  return m;
+}
+const keyNums = k => k.slice(2).split(",").map(Number);
+function fromEntries(m) {
+  const d = { v: 7, world: WORLD_SEED, wv: +(m.get("m:wv") || 0), edited: 1, seeded: 0, stamp: 0, cells: [], cdiff: [], roads: [], blocks: [], bridges: [] };
+  m.forEach((v, k) => { if (v == null) return; const n = keyNums(k); try {
+    if (k[0] === "c") d.cells.push([n[0], n[1], JSON.parse(v)]);
+    else if (k[0] === "t") d.cdiff.push([n[0], n[1], JSON.parse(v)]);
+    else if (k[0] === "r") d.roads.push(n);
+    else if (k[0] === "b") { const [t, bv] = JSON.parse(v); d.blocks.push([n[0], n[1], n[2], t, bv]); }
+    else if (k[0] === "g") d.bridges.push([...n, ...JSON.parse(v)]);
+  } catch (e) { } });
+  return d;
+}
+async function shareFetch(path, opt = {}) {
+  try {
+    const r = await fetch("/api/" + path, Object.assign({ cache: "no-store" }, opt, { headers: Object.assign({ "Content-Type": "application/json" }, opt.headers || {}) }));
+    return r.ok ? await r.json() : null;
+  } catch (e) { return null; }
+}
+const ownerHeaders = () => { try { return (window.cityAuth && window.cityAuth()) || {}; } catch (e) { return {}; } };
+async function shareStart() {
+  const r = await shareFetch("city?since=0"); if (!r || !Array.isArray(r.ch)) return;      // 没有后端（本地预览等）：只存本机
+  if (!r.rev) {                                                                              // 服务器上还没有城市：站主打开时用站主本机的城市建立
+    const h = ownerHeaders(); if (!h.Authorization) { share.t = setTimeout(shareStart, 60e3); return; }
+    const cur = entries(), s2 = await shareFetch("city/reset", { method: "POST", headers: h, body: JSON.stringify({ set: [...cur] }) }); if (!s2) return;
+    share.base = cur; share.rev = s2.rev; share.on = true; shareKick(4000); return;
+  }
+  const m = new Map(r.ch.filter(x => x[1] != null)), cur = entries();
+  const same = cur.size === m.size && [...m].every(([k, v]) => cur.get(k) === v);
+  if (!same) { share.applying = true; try { importJSON(fromEntries(m)); afterLoad(); } finally { share.applying = false; } }
+  share.base = m; share.rev = r.rev; share.on = true; edited = 1; save(); shareKick(1200);
+}
+/* 本机与服务器不同的记录（有本机改动时才比对，整座城导出一次较费时） */
+function localSet(cur) {
+  const set = [];
+  cur.forEach((v, k) => { if (share.base.get(k) !== v) set.push([k, v]); });
+  share.base.forEach((v, k) => { if (!cur.has(k)) set.push([k, null]); });
+  return set;
+}
+/* 关页面前还没传上去的改动：用 keepalive 补传 */
+addEventListener("pagehide", () => {
+  if (!share.on || !share.dirty) return;
+  try { const set = localSet(entries()).slice(0, 1500); if (set.length) fetch("/api/city", { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ since: share.rev, set }) }); } catch (e) { }
+});
+function shareKick(ms) { clearTimeout(share.t); share.t = setTimeout(shareSync, ms); }
+async function shareSync() {
+  if (!share.on) return;
+  if (share.busy || (document.hidden && !share.dirty)) { shareKick(4000); return; }     // 页面在后台时不取别人的改动，但自己的改动照传
+  share.busy = true;
+  try {
+    let cur = null, set = [];
+    if (share.dirty) { share.dirty = false; cur = entries(); set = localSet(cur);
+      if (set.length > 1500) { set = set.slice(0, 1500); share.dirty = true; } }      // 一次最多传 1500 条，剩下的下一轮
+    const r = set.length ? await shareFetch("city", { method: "POST", body: JSON.stringify({ since: share.rev, set }) }) : await shareFetch("city?since=" + share.rev);
+    if (r && Array.isArray(r.ch)) {
+      set.forEach(([k, v]) => v == null ? share.base.delete(k) : share.base.set(k, v));
+      if (applyRemote(r.ch, cur) !== false) share.rev = r.rev;
+    }
+  } finally { share.busy = false; if (share.on) shareKick(share.dirty ? 1200 : expanded ? 4000 : 30e3); }
+}
+/* 把别人的改动装进场景：只动有变化的记录；我在请求期间又改过的记录先不动（下次同步会传上去） */
+function applyRemote(ch, sent) {
+  if (!ch.length) return true;
+  if (!sent && share.dirty) return false;                    // 请求期间我又改了东西：这批先不收，下一轮连同我的改动一起对
+  const now = entries(), todo = []; sent = sent || now;
+  ch.forEach(([k, v]) => {
+    if (v == null) share.base.delete(k); else share.base.set(k, v);
+    if ((now.get(k) ?? null) === v || sent.get(k) !== now.get(k)) return;
+    todo.push([k, v]);
+  });
+  if (!todo.length) return true;
+  share.applying = true;
+  try {
+    const terr = [], cellsTouched = []; let roadsTouched = false;
+    todo.sort((a, b) => "trcbg".indexOf(a[0][0]) - "trcbg".indexOf(b[0][0]));       // 先地块和路，再楼，最后方块和连廊
+    todo.forEach(([k, v]) => { const n = keyNums(k); try {
+      if (k[0] === "t") { const fl = v ? JSON.parse(v) : null, c = [];
+        if (fl) for (let q = 0; q < fl.length; q += 3) c.push({ a: fl[q], b: fl[q + 1], t: fl[q + 2] });
+        else (baseWorld(WORLD_SEED).cols.get(K(n[0], n[1])) || []).forEach(r => c.push({ ...r }));
+        putCol(K(n[0], n[1]), c); terr.push([n[0], n[1]]); }
+      else if (k[0] === "r") { if (v) roads.add(K(n[0], n[1])); else roads.delete(K(n[0], n[1])); roadsTouched = true; }
+      else if (k[0] === "c") { const [i, j] = n; while (popFloor(i, j)); cellsTouched.push(K(i, j));
+        (v ? JSON.parse(v) : []).forEach(([t, s2, fv, r, ws, z, dcs, win, ox, oz]) => {
+          if (FLOORS.has(t) && SIZES[s2] && canPlace(i, j)) addFloor(i, j, { t, s: s2, v: fv, r: r || 0, z: z || 1, win, ox, oz, decals: (dcs || []).map(([d2, u2, ty]) => ({ d: d2, u: u2, type: ty })), wings: (ws || []).filter(w => FLOORS.has(w[1])).map(([d2, t2, s3, v2, u2, l2]) => ({ d: d2, t: t2, s: s3, v: v2, u: u2 || 0, lv: l2 || 0 })) }); });
+        markDirty(i, j); }
+      else if (k[0] === "b") { const old = blocks.find(b => fx(b.x) === n[0] && fx(b.z) === n[1] && fx(b.y) === n[2]); if (old) dropBlock(old);
+        if (v) { const [t, bv] = JSON.parse(v); if (isFixed(t)) addBlockObj({ x: n[0], z: n[1], y: n[2], t, v: bv }); } }
+      else if (k[0] === "g") { const a = n.slice(0, 3), b = n.slice(3, 6), old = bridges.find(x => sameF(x.a, a) && sameF(x.b, b)); if (old) dropBridge(old);
+        if (v) { const [t, bv] = JSON.parse(v); addBridge(a, b, t, bv); } }
+    } catch (e) { } });
+    /* 楼重建时会顺带拆掉连着它的连廊：按服务器记录补回 */
+    if (cellsTouched.length) share.base.forEach((v, k) => { if (k[0] !== "g") return; const n = keyNums(k), a = n.slice(0, 3), b = n.slice(3, 6);
+      if (!bridges.some(x => sameF(x.a, a) && sameF(x.b, b))) try { const [t, bv] = JSON.parse(v); addBridge(a, b, t, bv); } catch (e) { } });
+    if (terr.length) rebuildTerrain(terr);
+    if (terr.length || roadsTouched) rebuildRoads();
+    changed();
+  } finally { share.applying = false; }
+}
+/* 站主：把共享城市回滚到某个时间（毫秒时间戳）之前的样子 */
+async function shareRollback(to) {
+  const r = await shareFetch("city/rollback", { method: "POST", headers: ownerHeaders(), body: JSON.stringify({ to }) });
+  if (r) shareKick(0); return r;
 }
 /* 发布：返回带新版本号的城市数据（字符串），由网页写进 data.json */
 function publishJSON() { stamp = Date.now(); save(); return JSON.stringify(exportJSON()); }
@@ -2089,7 +2212,7 @@ const api = {
   registerFloor, registerTemplate, placeTemplate, addButton, on, off, place, remove, addWing, removeWing, connect, dig, fill,
   addRoad, removeRoad, addGrass, removeGrass, windowAll, attachWin, detachWin, addWater, removeWater, genWorld, setWorld, addDecal, removeDecal, raise: fill, lower: dig, addVox, delVox, typeAt, genTerrain, trimRiverRoads, group, placeBlock, removeBlock, mergeNeighbor, seedCity, undo, redo, clear: clearCity,
   select, expand, collapse, rotateBy, exportJSON, importJSON, publishJSON, migrateWorld, addSpurs, setPure, setView, config,
-  jumpTo, tickCars: dt => stepCars(dt),
+  jumpTo, tickCars: dt => stepCars(dt), shareRollback, get shared() { return share.on; },
   setCamera(o) { Object.assign(cam, o); if (o.theta != null) goal.theta = cam.theta; if (o.phi != null) goal.phi = cam.phi; orbit = null; updateCamera(); },
   get cam() { return Object.assign({}, cam); },
   setTimePaused, get timePaused() { return pausedHour != null; },

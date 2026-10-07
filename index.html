@@ -1124,6 +1124,7 @@ async function api(path,opt={}){
   const j=await r.json().catch(()=>null);if(!r.ok||!j)throw new Error((j&&j.error)||("HTTP "+r.status));return j;
 }
 const ownerAuth=()=>ownerUnlocked&&ghCfg().token?{Authorization:"Bearer "+ghCfg().token}:{};
+window.cityAuth=ownerAuth;                       // 共享城市：站主建立 / 回滚时用
 async function loadSocial(){
   const ids=DATA.feed.map(p=>p.id).filter(id=>/^[\w-]{1,48}$/.test(id));if(!ids.length)return;
   try{const j=await api("social?vid="+VID+"&ids="+encodeURIComponent(ids.join(",")));social.ok=true;social.posts=j.posts||{};}
@@ -1693,7 +1694,11 @@ function openSettings(){
     +'<div class="field"><label>文件路径 path</label><input name="path" value="'+esc(c.path)+'"></div>'
     +'<div class="field"><label>GitHub 令牌 Token</label><input name="token" type="password" placeholder="'+(c.token?'已保存':'ghp_ 或 github_pat_…')+'"></div>'
     +'<p class="sub" style="margin:0">创建：GitHub → Settings → Developer settings → Fine-grained tokens → 选中本仓库 → Repository permissions → Contents: Read and write。</p>'
+    +(ownerUnlocked&&window.CityGame&&CityGame.shared?'<div class="field"><label>城市回滚到</label><div style="display:flex;gap:8px"><input id="cityTo" type="datetime-local" style="flex:1"><button type="button" class="btn soft" id="cityRb">回滚</button></div></div>':'')
     +'<div class="modal-actions"><button type="button" class="btn ghost" data-action="modal-close">取消</button>'+(c.token?'<button type="button" class="btn soft danger" data-action="gh-clear">清除令牌</button>':'')+'<button type="submit" class="btn">保存</button></div></form>');
+  const rb=bg.querySelector("#cityRb");                 // 共享城市：撤回某个时间之后所有人的改动
+  if(rb)rb.addEventListener("click",async()=>{const t=new Date(bg.querySelector("#cityTo").value).getTime();if(!(t>0))return;
+    rb.disabled=true;const r=await CityGame.shareRollback(t);rb.disabled=false;toast(r?"已回滚 "+r.reverted+" 处":"回滚失败");});
   bg.querySelector("#ghForm").addEventListener("submit",e=>{e.preventDefault();const fd=new FormData(e.target);const cfg=ghCfg();const nc={owner:fd.get("owner").trim(),repo:fd.get("repo").trim(),branch:fd.get("branch").trim()||"main",path:fd.get("path").trim()||"data.json",token:fd.get("token")||cfg.token};localStorage.setItem(KEY_GH,JSON.stringify(nc));bg.remove();toast("已保存设置");});
 }
 function openProfile(){
@@ -2410,7 +2415,7 @@ boot();
 <script type="importmap">{"imports":{"three":"./assets/vendor/three.module.min.js"}}</script>
 <script type="module">
   /* 右下角城市只在桌面宽度加载；窗口从窄拉宽时再加载 */
-  const mq=matchMedia("(min-width:1081px)"),go=()=>{if(mq.matches)import("./assets/city.js?v=20261009a");};
+  const mq=matchMedia("(min-width:1081px)"),go=()=>{if(mq.matches)import("./assets/city.js?v=20261009b");};
   go();mq.addEventListener("change",go);
 </script>
 
