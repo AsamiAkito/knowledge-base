@@ -865,6 +865,42 @@
 
   /* 内置 Twemoji（本地文件，不依赖外部网络；未收录的表情自动回退系统字体） */
   img.emoji{height:1.15em;width:1.15em;margin:0 .06em -.18em;display:inline-block;vertical-align:baseline}
+  /* ===== 窄屏 / 手机端（放在最后，覆盖前面的同名规则） ===== */
+  @media(max-width:1080px){
+    .rail{display:none}                                   /* 照片墙、活动格只在桌面端 */
+    .rail.rail-c{display:block;position:static;width:auto;padding:0;margin-top:var(--s6)}
+    .rail.rail-c .rail-scroll{padding-top:0}
+  }
+  @media(max-width:760px){
+    .kb,.kb.no-notes,.fav{grid-template-columns:minmax(0,1fr);gap:var(--s4)}
+    .kb-tree{position:static;max-height:min(42vh,320px);margin:0;padding:0;overflow:auto;
+      border-bottom:1px solid var(--line);padding-bottom:var(--s3)}
+    .kb-notes,.fav-side{position:static;max-height:none;margin:0}
+    .kb-main{padding:var(--s5) var(--s4);scroll-margin-top:110px}
+    /* 收藏夹列表横向滑动，不占一整屏 */
+    .fav-side{display:flex;gap:var(--s2);overflow-x:auto;padding:0 0 var(--s2);scrollbar-width:none}
+    .fav-side::-webkit-scrollbar{display:none}
+    .fav-side .ph-title{display:none}
+    .fav-side .folder{flex:none;border:1px solid var(--line);border-left-width:1px;border-radius:var(--r);padding:var(--s2) var(--s3)}
+    .fav-side .folder.sel{border-color:var(--accent)}
+    .fav-side .f-count{display:none}
+    .fav-side .btn{flex:none;width:auto!important;margin:0!important}
+    .fav-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s3)}
+    .fav-main-head{flex-wrap:wrap;gap:var(--s2)}
+    .fav-main-head h1{font-size:22px}
+    .fav-detail h1{font-size:18px}
+    /* 触屏：按钮够大、输入框不触发页面放大 */
+    .icon-btn,.btn{min-height:40px}
+    input,textarea,select{font-size:16px!important}
+    .cmt-form input.nick{flex-basis:84px;width:84px}
+    .foot-band{padding-left:var(--s4);padding-right:var(--s4)}
+  }
+  @media(max-width:420px){.fav-grid{grid-template-columns:minmax(0,1fr)}}
+  /* 触屏没有悬停：去掉点完会“粘住”的悬停效果，悬停才出现的控件常显 */
+  @media(hover:none){
+    .post:hover{border-color:var(--line);box-shadow:none}.post:hover::before{opacity:0}
+    .pv-nav{opacity:1}
+  }
 </style>
 
 <header class="site">
@@ -1495,21 +1531,33 @@ function renderKB(){
   scheduleLines();
 }
 
-/* B站接口不允许跨域，但支持 JSONP —— 用 <script> 取封面和标题 */
+/* B站接口不允许跨域，但支持 JSONP。JSONP 会执行对方返回的脚本，所以放进沙盒 iframe（无同源权限，
+   读不到本页的 localStorage / 发布令牌）里取，只把需要的字段传回来 */
 function biliInfo(bvid){
-  return new Promise((resolve)=>{
-    const cb="__bili_"+Math.random().toString(36).slice(2,9);
-    const sc=document.createElement("script");
+  return new Promise(resolve=>{
+    if(!/^BV\w+$/i.test(bvid))return resolve(null);
+    const fr=document.createElement("iframe"),id=Math.random().toString(36).slice(2);
+    fr.setAttribute("sandbox","allow-scripts");fr.style.display="none";
     let done=false;
-    const finish=(v)=>{if(done)return;done=true;delete window[cb];sc.remove();resolve(v);};
-    window[cb]=(j)=>finish(j&&j.code===0&&j.data?{cover:(j.data.pic||"").replace(/^http:/,"https:"),title:j.data.title}:null);
-    sc.onerror=()=>finish(null);
-    setTimeout(()=>finish(null),6000);
-    sc.src="https://api.bilibili.com/x/web-interface/view?bvid="+encodeURIComponent(bvid)
-      +"&jsonp=jsonp&callback="+cb;
-    document.body.appendChild(sc);
+    const finish=v=>{if(done)return;done=true;removeEventListener("message",onMsg);fr.remove();resolve(v);};
+    const onMsg=e=>{if(e.source!==fr.contentWindow||!e.data||e.data.id!==id)return;const d=e.data.d;
+      finish(d?{cover:/^https?:\/\//.test(d.pic||"")?String(d.pic).replace(/^http:/,"https:"):"",title:String(d.title||""),author:String(d.author||"")}:null);};
+    addEventListener("message",onMsg);
+    fr.srcdoc='<script>function cb(j){var d=j&&j.code===0&&j.data;parent.postMessage({id:"'+id+'",d:d?{pic:d.pic,title:d.title,author:d.owner&&d.owner.name}:null},"*")}<\/script>'
+      +'<script src="https://api.bilibili.com/x/web-interface/view?bvid='+encodeURIComponent(bvid)+'&jsonp=jsonp&callback=cb" onerror="cb(null)"><\/script>';
+    document.body.appendChild(fr);setTimeout(()=>finish(null),6000);
   });
 }
+/* 作者名：收藏时记下；旧收藏缺作者的，打开页面时向 B 站补取（编辑模式下发布时一并写入） */
+/* 链接只放行网页 / 邮件 / 电话 / 站内地址，挡住 javascript: 之类 */
+const safeHref=u=>{u=String(u||"").trim();return /^(https?:|mailto:|tel:|#|\/|assets\/)/i.test(u)?u:"#";};
+const _authorAsk=new Set();
+function authorOf(it){
+  if(it.author)return it.author;
+  const m=String(it.url||"").match(/bilibili\.com\/video\/(BV[\w]+)/i);
+  if(m&&!_authorAsk.has(m[1])){_authorAsk.add(m[1]);biliInfo(m[1]).then(i=>{if(i&&i.author){it.author=i.author;render();}});}
+  return "";}
+const isVideo=it=>parseSource(String(it.url||"")).embed!=null;
 function parseSource(url){let m;
   if(m=url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})/))return{src:"YouTube",embed:"https://www.youtube.com/embed/"+m[1],thumb:"https://img.youtube.com/vi/"+m[1]+"/hqdefault.jpg",icon:""};
   if(m=url.match(/bilibili\.com\/video\/(BV[\w]+)/i))return{src:"Bilibili",embed:"https://player.bilibili.com/player.html?bvid="+m[1]+"&page=1&autoplay=0",thumb:null,icon:""};
@@ -1523,22 +1571,22 @@ function renderFav(){
     const it=cur.items[state.favItem];const s=parseSource(it.url);
     app.innerHTML='<div class="fav"><aside class="panel fav-side">'+sideHTML()+'</aside><section class="fav-detail"><button class="backlink" data-action="fav-back"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>返回 '+esc(cur.name)+'</button>'
       +(s.embed?'<div class="embed-wrap"><iframe src="'+esc(s.embed)+'" allowfullscreen allow="autoplay; encrypted-media"></iframe></div>':'<div class="embed-wrap" style="display:flex;align-items:center;justify-content:center;font-size:52px">'+s.icon+'</div>')
-      +'<h1>'+esc(it.title)+'</h1><div class="src">'+esc(s.src)+'</div>'
-      +'<a class="btn" style="display:inline-block;text-decoration:none" href="'+esc(it.url)+'" target="_blank" rel="noopener">在原网站打开 ↗</a></section><aside class="rail"><div class="rail-scroll">'+railContactsHTML()+'</div></aside></div>';
+      +'<h1>'+esc(it.title)+'</h1><div class="src">'+esc(authorOf(it)||s.src)+'</div>'
+      +'<a class="btn" style="display:inline-block;text-decoration:none" href="'+esc(safeHref(it.url))+'" target="_blank" rel="noopener">在原网站打开 ↗</a></section><aside class="rail rail-c"><div class="rail-scroll">'+railContactsHTML()+'</div></aside></div>';
     return;
   }
   const items=(cur.items||[]).filter(it=>em||!it.hidden);
   const grid=items.length?'<div class="fav-grid">'+cur.items.map((it,i)=>{if(!em&&it.hidden)return"";const s=parseSource(it.url);
       return '<div class="fcard'+(it.hidden?' hidden-item':'')+'"><div class="cover" data-action="fav-open" data-i="'+i+'">'+((it.cover||s.thumb)?'<img src="'+esc(it.cover||s.thumb)+'" alt="" referrerpolicy="no-referrer" onerror="this.style.display=\'none\'">':s.icon)+'<span class="src">'+esc(s.src)+'</span>'+'</div>'
-        +'<div class="info" data-action="fav-open" data-i="'+i+'" style="cursor:pointer"><div class="t">'+esc(it.title)+'</div><div class="u">'+esc(it.added?it.added.slice(0,10):it.url.replace(/^https?:\/\/(www\.)?/,"").split("/")[0])+'</div></div>'
+        +'<div class="info" data-action="fav-open" data-i="'+i+'" style="cursor:pointer"><div class="t">'+esc(it.title)+'</div><div class="u">'+esc(authorOf(it)||it.url.replace(/^https?:\/\/(www\.)?/,"").split("/")[0])+'</div></div>'
         +(em?'<div class="fedit"><button class="mini" data-action="fav-item-hide" data-i="'+i+'">'+(it.hidden?'取消隐藏':'隐藏')+'</button><button class="mini danger" data-action="fav-item-del" data-i="'+i+'">删除</button></div>':'')+'</div>';
     }).join("")+'</div>':'<div class="empty">这个收藏夹还是空的</div>';
   if(!DATA.fav.length){app.innerHTML='<div class="fav"><aside class="panel fav-side">'+sideHTML()+'</aside><section>'
     +'<div class="fav-main-head"><h1>收藏</h1><div class="spacer" style="flex:1"></div>'+(em?'<button class="btn" data-action="fav-add-open">＋ 收藏网页/视频</button>':'')+'</div>'
-    +'<div class="empty">还没有收藏</div></section><aside class="rail"><div class="rail-scroll">'+railContactsHTML()+'</div></aside></div>';return;}
+    +'<div class="empty">还没有收藏</div></section><aside class="rail rail-c"><div class="rail-scroll">'+railContactsHTML()+'</div></aside></div>';return;}
   const head='<div class="fav-main-head"><h1>'+esc(cur.name)+'</h1><span class="cnt" style="font-family:var(--mono);font-size:12px;color:var(--text-dim)">'+(cur.items||[]).length+'</span><div class="spacer" style="flex:1"></div>'
     +(em?'<button class="btn sm link" data-action="fav-folder-rename" data-i="'+state.favFolder+'">重命名</button><button class="btn sm link" data-action="fav-folder-hide" data-i="'+state.favFolder+'">'+(cur.hidden?'取消隐藏':'隐藏')+'</button><button class="btn sm danger" data-action="fav-folder-del" data-i="'+state.favFolder+'">删除夹</button><button class="btn" data-action="fav-add-open">＋ 收藏网页/视频</button>':'')+'</div>';
-  app.innerHTML='<div class="fav"><aside class="panel fav-side">'+sideHTML()+'</aside><section>'+head+grid+'</section><aside class="rail"><div class="rail-scroll">'+railContactsHTML()+'</div></aside></div>';
+  app.innerHTML='<div class="fav"><aside class="panel fav-side">'+sideHTML()+'</aside><section>'+head+grid+'</section><aside class="rail rail-c"><div class="rail-scroll">'+railContactsHTML()+'</div></aside></div>';
 }
 
 function captureComposer(){const t=$("#composerText");if(t)state.composerText=t.value;const g=$("#composerImg");if(g)state.composerImgText=g.value;}
@@ -1603,17 +1651,17 @@ function openAddFav(){
   bg.querySelector("#addForm").addEventListener("submit",async e=>{e.preventDefault();const fd=new FormData(e.target);let url=(fd.get("url")||"").trim();if(!url)return;if(!/^https?:/.test(url))url="https://"+url;
     toast("正在获取信息…");
     let title=(fd.get("title")||"").trim();
-    let cover=(fd.get("cover")||"").trim();
+    let cover=(fd.get("cover")||"").trim(),author="";
     /* B站：自动取封面与标题 */
     const bm=url.match(/bilibili\.com\/video\/(BV[\w]+)/i);
     if(bm&&(!cover||!title)){
       const info=await biliInfo(bm[1]);
-      if(info){ if(!cover)cover=info.cover; if(!title)title=info.title; }
+      if(info){ if(!cover)cover=info.cover; if(!title)title=info.title; if(info.author)author=info.author; }
     }
     if(!title)title=url.replace(/^https?:\/\//,"").slice(0,60);
     let fi;
     if(sel.value==="__new__"){const nm=(fd.get("newFolder")||"新收藏夹").trim()||"新收藏夹";DATA.fav.push({name:nm,items:[]});fi=DATA.fav.length-1;}else fi=+sel.value;
-    (DATA.fav[fi].items=DATA.fav[fi].items||[]).push(Object.assign({title,url,added:now()},cover?{cover}:{}));state.favFolder=fi;state.favItem=null;saveDraft();bg.remove();renderFav();toast("已收藏");});
+    (DATA.fav[fi].items=DATA.fav[fi].items||[]).push(Object.assign({title,url,added:now()},cover?{cover}:{},author?{author}:{}));state.favFolder=fi;state.favItem=null;saveDraft();bg.remove();renderFav();toast("已收藏");});
 }
 function openMove(id){
   const loc=locate(id);if(!loc)return;
@@ -1685,7 +1733,7 @@ document.addEventListener("click",e=>{
     case "post-delete":{if(confirm("删除这条动态？")){DATA.feed=DATA.feed.filter(x=>x.id!==id);saveDraft();state.feedOpen=null;renderFeed();}return;}
 
     case "kb-folder":state.kbSel=id;if(state.expanded.has(id))state.expanded.delete(id);else state.expanded.add(id);state.editingFile=false;renderKB();return;
-    case "kb-open":state.kbSel=id;state.editingFile=false;renderKB();return;
+    case "kb-open":{state.kbSel=id;state.editingFile=false;renderKB();const n=matchMedia("(max-width:760px)").matches&&$(".kb-main");if(n)n.scrollIntoView({behavior:"smooth",block:"start"});return;}
     case "kb-hl":flashPair("note-"+el.dataset.n,"hl-"+el.dataset.n);return;
     case "kb-note":flashPair("hl-"+el.dataset.n,"note-"+el.dataset.n);return;
     case "kb-newfolder":{const nm=prompt("新文件夹名称：","新文件夹");if(nm){const n={id:uid(),type:"folder",name:nm.trim()||"新文件夹",children:[]};targetChildren().push(n);state.kbSel=n.id;state.expanded.add(n.id);saveDraft();renderKB();}return;}
@@ -1942,7 +1990,7 @@ function railContactsHTML(){
     const t=' title="'+esc(c.label+(c.value?" · "+c.value:""))+'"';
     const inner='<span class="c-ic">'+g+'</span><span class="c-name">'+esc(c.label)+'</span>';
     if(c.qr)  return '<div class="contact" data-action="contact-qr" data-i="'+all.indexOf(c)+'"'+t+'>'+inner+'</div>';
-    if(c.url) return '<a class="contact" href="'+esc(c.url)+'" target="_blank" rel="noopener"'+t+'>'+inner+'</a>';
+    if(c.url) return '<a class="contact" href="'+esc(safeHref(c.url))+'" target="_blank" rel="noopener"'+t+'>'+inner+'</a>';
     if(c.value)return '<div class="contact" data-action="contact-copy" data-v="'+esc(c.value)+'"'+t+'>'+inner+'</div>';
     return '<div class="contact"'+t+'>'+inner+'</div>';
   }).join("");
@@ -2149,11 +2197,11 @@ function renderFootBand(){
   const posts=DATA.feed.filter(p=>em||!p.hidden),p=posts[0];
   const files=[];(function w(ns,hid){ns.forEach(n=>{const h=hid||n.hidden;if(!em&&h)return;if(n.type==="file")files.push(n);else w(n.children||[],h);});})(DATA.kb,false);
   const doc=files.slice().sort((a,b)=>String(b.updated||"").localeCompare(String(a.updated||""))||docChars(b)-docChars(a))[0];
-  let fv=null;DATA.fav.forEach((f,fi)=>{if(!em&&f.hidden)return;(f.items||[]).forEach((it,ii)=>{if(!em&&it.hidden)return;if(!fv||String(it.added||"")>=String(fv.it.added||""))fv={it,fi,ii,f};});});
+  let fv=null;DATA.fav.forEach((f,fi)=>{if(!em&&f.hidden)return;(f.items||[]).forEach((it,ii)=>{if(!em&&it.hidden)return;if(!isVideo(it))return;if(!fv||String(it.added||"")>=String(fv.it.added||""))fv={it,fi,ii,f};});});
   const cell=(label,attrs,t,m)=>'<div class="fb-cell" data-action="foot-go" '+attrs+'><div class="ph-title">'+label+'</div><div class="fb-t">'+esc(t)+'</div><div class="fb-m">'+esc(m)+'</div></div>';
   box.innerHTML=(p?cell("LATEST",'data-view="feed" data-id="'+p.id+'"',plain(p.text).slice(0,60),p.date||""):'<div></div>')
     +(doc?cell("READING",'data-view="kb" data-id="'+doc.id+'"',doc.name,(doc.tags||[]).join(" · ")||(docChars(doc)?docChars(doc).toLocaleString()+" 字":"")):'<div></div>')
-    +(fv?cell("SAVED",'data-view="fav" data-f="'+fv.fi+'" data-i="'+fv.ii+'"',fv.it.title,fv.f.name+(fv.it.added?" · "+fv.it.added.slice(0,10):" · "+(fv.f.items||[]).length+" 项")):'<div></div>')
+    +(fv?cell("VIDEOS",'data-view="fav" data-f="'+fv.fi+'" data-i="'+fv.ii+'"',fv.it.title,authorOf(fv.it)):'<div></div>')
     +'<div class="fb-meta">© '+new Date().getFullYear()+' 秋渡</div>';
 }
 /* 进入动效：只在切换板块 / 打开详情时播放，点赞评论等局部刷新不重播 */

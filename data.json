@@ -156,12 +156,14 @@
         {
           "title": "Pi 大道至简，超越Codex和Claude Code的极简Agent，保姆级全攻略， 一期视频精通",
           "url": "https://www.bilibili.com/video/BV139bD6gEa8/",
-          "cover": "https://i0.hdslb.com/bfs/archive/0c723b49f9257609dec1809758396473c36962b9.jpg"
+          "cover": "https://i0.hdslb.com/bfs/archive/0c723b49f9257609dec1809758396473c36962b9.jpg",
+          "author": "技术爬爬虾"
         },
         {
           "title": "彭博社深度专访 Anthropic  CEO【中英双语】",
           "url": "https://www.bilibili.com/video/BV1RNYu6iEjB/",
-          "cover": "https://i1.hdslb.com/bfs/archive/7c290bf75bd6fb8956d073ca7b1fba8fa9c24999.jpg"
+          "cover": "https://i1.hdslb.com/bfs/archive/7c290bf75bd6fb8956d073ca7b1fba8fa9c24999.jpg",
+          "author": "BusinessTime"
         }
       ]
     },
@@ -171,7 +173,8 @@
         {
           "title": "从奢侈品牌表现看中国阶层财富，受房价下跌拖累，消费降级；高净值人群奢侈品及旅游度假消费增长强劲。爱马仕、香奈儿、梵克雅宝销售表现优于古驰、博柏利",
           "url": "https://www.bilibili.com/video/BV1oGG66zEms/",
-          "cover": "https://i0.hdslb.com/bfs/archive/bc16af6b8c0497a91daf28e6b83fde111e57340c.jpg"
+          "cover": "https://i0.hdslb.com/bfs/archive/bc16af6b8c0497a91daf28e6b83fde111e57340c.jpg",
+          "author": "斯温实验室"
         }
       ]
     },
@@ -181,12 +184,14 @@
         {
           "title": "【建议收藏】提升审美与效率！设计师必逛的灵感网站",
           "url": "https://www.bilibili.com/video/BV1wZYY6EErY",
-          "cover": "https://i1.hdslb.com/bfs/archive/f954c4291ed4d91663f2583ae981cf8c9950be30.jpg"
+          "cover": "https://i1.hdslb.com/bfs/archive/f954c4291ed4d91663f2583ae981cf8c9950be30.jpg",
+          "author": "Rofix"
         },
         {
           "title": "【视频播客】Aēsop、小米为什么是品牌表达大师？｜《温柔一刀》对话姜国政",
           "url": "https://www.bilibili.com/video/BV1k2hXzSEZV",
-          "cover": "https://i2.hdslb.com/bfs/archive/08d1237f40d4c0d6896e7ff8d66e43c2963b7305.jpg"
+          "cover": "https://i2.hdslb.com/bfs/archive/08d1237f40d4c0d6896e7ff8d66e43c2963b7305.jpg",
+          "author": "刀姐doris"
         }
       ]
     }
