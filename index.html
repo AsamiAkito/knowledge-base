@@ -481,12 +481,12 @@
     .kb-tree,.kb-notes,.fav-side{top:0;max-height:calc(83.3333vh - 108px)}
     /* 编辑模式下工具条占一行高度，内容区和右栏一起下移，避免被盖住 */
     body.editing main{top:var(--tbh,112px)}
-    body.editing .rail{top:var(--tbh,112px);height:calc(83.3333vh - var(--tbh,112px))}
+    body.editing .rail{top:var(--tbh,112px);height:calc(83.3333vh - var(--tbh,112px) - 28px)}
     /* 知识库整体右移，使 DIRECTORY 左边缘与顶栏“秋”字对齐
        1196 = 顶栏内容宽 1240 减去 main 左右各 22 的内边距 */
     .kb,.fav{max-width:1196px;margin:0 auto}
     /* 右栏：内容用滚轮上下滑动（不裁剪，照片仍可拖出） */
-    .rail{top:62px;height:calc(83.3333vh - 62px);overflow:visible;
+    .rail{top:62px;height:calc(83.3333vh - 62px - 28px);overflow:visible;     /* 底部留 28px，照片墙不贴着城市 */
       clip-path:inset(0 -100vw 0 -100vw)}   /* 上下按框裁剪，左右放行到整屏以便拖动照片 */
     .rail-scroll{display:flex;flex-direction:column;gap:14px;
       transition:transform var(--d1) var(--e-out);will-change:transform}
@@ -788,7 +788,8 @@
   .node .row:hover,.folder:hover,.fs-arch button:hover{background:color-mix(in srgb,var(--text) 4%,transparent)}
   .node .row{min-height:32px;padding-top:var(--s1);padding-bottom:var(--s1)}
   /* 动态左栏与知识库 / 收藏左栏同一起点 */
-  @media(min-width:1240px){.feed-side{left:22px;width:232px}}
+  /* 左栏放在页面左缘与正文之间的空白正中（正文 660 宽居中），太窄时至少离边 40px */
+  @media(min-width:1240px){.feed-side{left:max(40px,calc((50vw - 330px - 232px) / 2));width:232px}}
   /* 计数与标签垂直对齐，颜色再淡一档 */
   .page-h{align-items:center}
   .page-h .cnt,.fav-main-head .cnt{color:color-mix(in srgb,var(--text-dim) 75%,transparent)}
@@ -1076,7 +1077,7 @@ function syncToolbarH(){
   const h=(document.body.classList.contains("editing")&&tb)?Math.round(tb.getBoundingClientRect().height):0;
   const top=62+h;
   if(m)m.style.top=top+"px";
-  if(rail){rail.style.top=top+"px";rail.style.height="calc(83.3333vh - "+top+"px)";}
+  if(rail){rail.style.top=top+"px";rail.style.height="calc(83.3333vh - "+(top+28)+"px)";}
 }
 addEventListener("resize",syncToolbarH);
 function setEdit(on){state.editMode=on;document.body.classList.toggle("editing",on);$("#editBtn").classList.toggle("on",on);render();updateBar();requestAnimationFrame(syncToolbarH);}
@@ -2324,5 +2325,5 @@ boot();
 
 <!-- 右下角小游戏：线条城市（three.js 本地文件） -->
 <script type="importmap">{"imports":{"three":"./assets/vendor/three.module.min.js"}}</script>
-<script type="module" src="assets/city.js?v=20261007r"></script>
+<script type="module" src="assets/city.js?v=20261007s"></script>
 

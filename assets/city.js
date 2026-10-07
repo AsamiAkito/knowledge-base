@@ -1567,11 +1567,14 @@ function injectCSS() {
   .city-pop.pure .city-win{width:100%;height:100%;border-radius:0;box-shadow:none;transform:none}
   .city-pop.pure .city-bar,.city-pop.pure .city-tri,.city-pop.pure .cb-pv{display:none}
   .city-canvas.grabbing{cursor:grabbing}
-  .city-tri{position:absolute;left:0;top:0;width:36px;height:36px;border:0;padding:0;margin:0;cursor:pointer;z-index:3;background:transparent}
-  .city-tri::before{content:"";position:absolute;left:0;top:0;width:18px;height:18px;background:var(--accent);
-    clip-path:polygon(0 0,100% 0,0 100%);transition:width var(--d2,200ms) var(--e-out,ease),height var(--d2,200ms) var(--e-out,ease)}
-  .city-tri:hover::before{width:26px;height:26px}
-  .city-tri:focus-visible{outline:0}.city-tri:focus-visible::before{width:26px;height:26px}
+  /* 展开 = 十字、收起 = 一字，与栏目标题前的青色短横同一粗细长度 */
+  .city-tri{position:absolute;left:0;top:0;width:40px;height:40px;border:0;padding:0;margin:0;cursor:pointer;z-index:3;background:transparent;
+    transition:transform var(--d2,200ms) var(--e-out,ease)}
+  .city-tri::before,.city-tri::after{content:"";position:absolute;left:13px;top:19px;width:14px;height:2px;background:var(--accent)}
+  .city-tri::after{transform:rotate(90deg)}
+  .city-tri.minus::after{display:none}
+  .city-tri:hover,.city-tri:focus-visible{outline:0;transform:rotate(90deg)}
+  .city-tri.minus:hover,.city-tri.minus:focus-visible{transform:scaleX(1.4)}
   #corner.city-on{padding:0}
   .city-pop{position:fixed;inset:0;z-index:88;display:flex;align-items:center;justify-content:center;padding:24px;
     background:rgba(12,13,15,.5);opacity:0;pointer-events:none;transition:opacity var(--d2,200ms) var(--e-out,ease)}
@@ -1639,7 +1642,7 @@ function buildUI() {
   corner.classList.add("city-on");
   corner.innerHTML = '<div class="city-host"></div><button class="city-tri" aria-label="展开"></button>';
   pop = document.createElement("div"); pop.className = "city-pop";
-  pop.innerHTML = '<div class="city-win"><div class="city-stage"></div><button class="city-tri" aria-label="收起"></button><div class="city-bar"></div></div>';
+  pop.innerHTML = '<div class="city-win"><div class="city-stage"></div><button class="city-tri minus" aria-label="收起"></button><div class="city-bar"></div></div>';
   document.body.appendChild(pop);
   popStage = pop.querySelector(".city-stage"); bar = pop.querySelector(".city-bar");
   corner.querySelector(".city-tri").addEventListener("click", e => { e.stopPropagation(); expand(); });
