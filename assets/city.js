@@ -74,6 +74,7 @@ const F = {   // 常用立面图案
   windows: (n, b = .2, t = .78, gap = .5) => (w, h) => { const o = [], span = w * .82, cw = span / n, pw = cw * gap;
     for (let i = 0; i < n; i++) { const u = -span / 2 + (i + .5) * cw, a = u - pw / 2, c = u + pw / 2, y1 = h * b, y2 = h * t;
       o.push([a, y1, c, y1], [c, y1, c, y2], [c, y2, a, y2], [a, y2, a, y1]); } return o; },
+  slots: (n, gap = .022) => (w, h) => { const o = [], span = w * .8; for (let i = 0; i < n; i++) { const u = -span / 2 + (i + .5) * span / n; o.push([u - gap, 0, u - gap, h], [u + gap, 0, u + gap, h]); } return o; },
   all: (...fns) => (w, h) => fns.flatMap(f => f(w, h))
 };
 /* 方盒四面的窗格（夜里亮灯）：cols 列，rows 为每行中心高度比例 */
@@ -107,6 +108,8 @@ function roundPanes(rad, h, { count = 12, ph = .46, seed = 1, rows = [.5] } = {}
      id, name, icon(24×24 线条 SVG 字符串),
      height: 数字 | (w)=>数字    层高（格，默认 0.16 = 一排方格），可按占地宽度 w 计算
      cap: true                    封顶层：上面不能再盖，也不能当侧翼
+     seamless: true               无缝层：同类型、同尺寸、同朝向上下相叠时，层间不画横线，像一整根连续的塔身
+                                  （上下边线自动从实体轮廓里拆出，也可在 build 里返回 ringTop / ringBottom 自定义）
      build({THREE,w,h,seed,helpers}) → { solid, lines?, panes?, autoEdges? }
        solid  实体几何（底面在 y=0，占地 w×w 居中）
        lines  立面线条（LineSegments 的顶点对），可用 helpers.facade / helpers.F 生成
@@ -128,8 +131,16 @@ function floorGeo(t, s, v) {
   if (geoCache.has(key)) return geoCache.get(key);
   const def = FLOORS.get(t), w = SIZES[s], h = floorHeight(def, w);
   const r = def.build({ THREE, w, h, seed: v * 7919 + 13, helpers });
-  const edges = merge([r.autoEdges === false ? null : new THREE.EdgesGeometry(r.solid, 25), r.lines]);
-  const out = { solid: r.solid, edges, panes: r.panes || null, h, w };
+  let edges = merge([r.autoEdges === false ? null : new THREE.EdgesGeometry(r.solid, 25), r.lines]), ringTop = null, ringBottom = null;
+  if (def.seamless) {                                   // 拆出 y=0 与 y=h 的水平线段，由 refreshSeams 决定是否显示
+    const keep = [], top = [], bot = [], a = edges.attributes.position.array, e = 1e-4;
+    for (let n = 0; n < a.length; n += 6) {
+      const seg = [[a[n], a[n + 1], a[n + 2]], [a[n + 3], a[n + 4], a[n + 5]]], flat = Math.abs(a[n + 1] - a[n + 4]) < e;
+      if (flat && Math.abs(a[n + 1] - h) < e) top.push(...seg); else if (flat && Math.abs(a[n + 1]) < e) bot.push(...seg); else keep.push(...seg);
+    }
+    edges = lines(keep); ringTop = r.ringTop || lines(top); ringBottom = r.ringBottom || lines(bot);
+  }
+  const out = { solid: r.solid, edges, panes: r.panes || null, h, w, ringTop, ringBottom };
   geoCache.set(key, out); return out;
 }
 
@@ -140,7 +151,7 @@ const body = (id, name, icon, lineFn, paneOpt, extra = {}) => registerFloor(Obje
 body("grid", "网格幕墙", I('<rect x="5" y="4" width="14" height="16"/><path d="M8.5 4v16M12 4v16M15.5 4v16M5 9.3h14M5 14.6h14"/>'),
   (w, h) => F.cols(Math.max(4, Math.round(w / .09)))(w, h), w => ({ cols: Math.max(4, Math.round(w / .09)), ph: .62, pr: .8 }));
 body("vfin", "竖向肋条", I('<rect x="5" y="4" width="14" height="16"/><path d="M7.3 4v16M9.6 4v16M11.9 4v16M14.2 4v16M16.5 4v16"/>'),
-  (w, h) => F.cols(Math.max(6, Math.round(w / .045)))(w, h), w => ({ cols: Math.max(3, Math.round(w / .14)), ph: .7, pr: .5 }));
+  (w, h) => F.cols(Math.max(6, Math.round(w / .045)))(w, h), w => ({ cols: Math.max(3, Math.round(w / .14)), ph: 1, pr: .5 }), { seamless: true });
 body("louver", "横向百叶", I('<rect x="5" y="5" width="14" height="14"/><path d="M5 7.5h14M5 10h14M5 12.5h14M5 15h14M5 17.5h14"/>'),
   F.hlines(3), w => ({ cols: Math.max(2, Math.round(w / .2)), ph: .3, pr: .8 }));
 body("ribbon", "带形窗", I('<rect x="5" y="5" width="14" height="14"/><path d="M5 9h14M5 13h14"/><path d="M8 9v4M11 9v4M14 9v4M17 9v4"/>'),
@@ -150,8 +161,18 @@ body("window", "窗户层", I('<rect x="5" y="6" width="14" height="12"/><path d
 body("diagrid", "斜交网格", I('<rect x="5" y="4" width="14" height="16"/><path d="M5 4l7 16M12 4 5 20M12 4l7 16M19 4l-7 16"/>'),
   F.diag(3), w => ({ cols: 3, ph: .4, pr: .45 }));
 body("curtain", "玻璃幕墙", I('<rect x="6" y="5" width="12" height="15"/><path d="M9 5v15M12 5v15M15 5v15M6 12h12"/>'),
-  (w, h) => F.cols(Math.max(5, Math.round(w / .07)))(w, h), w => ({ cols: Math.max(5, Math.round(w / .07)), ph: .8, pr: .78 }));
+  (w, h) => F.cols(Math.max(5, Math.round(w / .07)))(w, h), w => ({ cols: Math.max(5, Math.round(w / .07)), ph: 1, pr: .78 }), { seamless: true });
 body("plain", "实墙层", I('<rect x="5" y="8" width="14" height="10"/>'), null, null);
+body("shaft", "光面塔身", I('<path d="M7 3v18M17 3v18"/>'), null, w => ({ cols: 2, ph: 1, pr: .25, lit: .5 }), { seamless: true });
+body("slot", "竖条窗", I('<path d="M6 3v18M18 3v18M9 3v18M10 3v18M14 3v18M15 3v18"/>'),
+  (w, h) => F.slots(Math.max(2, Math.round(w / .2)))(w, h), w => ({ cols: Math.max(2, Math.round(w / .2)), ph: 1, pr: .22 }), { seamless: true });
+registerFloor({ id: "column", name: "圆柱塔身", seamless: true, icon: I('<path d="M7 3v18M17 3v18M10 3v18M14 3v18"/>'),
+  build: ({ w, h, seed }) => {
+    const r = w / 2, g = new THREE.CylinderGeometry(r, r, h, 32); g.translate(0, h / 2, 0); const p = [];
+    for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; p.push([Math.cos(a) * (r + .002), 0, Math.sin(a) * (r + .002)], [Math.cos(a) * (r + .002), h, Math.sin(a) * (r + .002)]); }
+    return { solid: g, lines: lines(p), autoEdges: false, ringTop: lines(ring(r + .002, h)), ringBottom: lines(ring(r + .002, 0)),
+      panes: roundPanes(r, h, { seed, count: 16, ph: 1 }) };
+  } });
 registerFloor({ id: "podium", name: "裙楼大板", height: .32, icon: I('<rect x="3" y="7" width="18" height="12"/><path d="M3 13h18M9 7v12M15 7v12"/><circle cx="12" cy="10" r="1.6"/>'),
   build: ({ w, h, seed }) => {
     const L = facade(w, h, F.cols(3));
@@ -335,6 +356,7 @@ function meshSet(g, tag, mat = faceMat, lmat = lineMat) {
   const grp = new THREE.Group(), m = new THREE.Mesh(g.solid, mat);
   if (tag) { m.userData = tag; hitMeshes.push(m); }
   grp.add(m, new THREE.LineSegments(g.edges, lmat));
+  if (g.ringTop) { const t = new THREE.LineSegments(g.ringTop, lmat), b = new THREE.LineSegments(g.ringBottom, lmat); t.userData.seam = "top"; b.userData.seam = "bottom"; grp.add(t, b); }
   if (g.panes && mat === faceMat) { const pm = new THREE.Mesh(g.panes, paneMat); pm.userData.pane = true; pm.visible = night; grp.add(pm); }
   return grp;
 }
@@ -343,6 +365,14 @@ function orient(obj, s, r) {
   const a = rad(r || 0), w = SIZES[s], k = Math.min(1, .96 / (w * (Math.abs(Math.cos(a)) + Math.abs(Math.sin(a)))));
   obj.rotation.y = -a; obj.scale.set(k, 1, k);
 }
+const sameLayer = (a, b) => a && b && a.t === b.t && a.s === b.s && (a.r || 0) === (b.r || 0);
+function refreshSeams(i, j) {
+  const st = stackOf(i, j);
+  st.forEach((f, k) => { if (!FLOORS.get(f.t).seamless) return;
+    const showTop = !sameLayer(f, st[k + 1]), showBot = !sameLayer(f, st[k - 1]);
+    f.obj.children.forEach(o => { if (o.userData.seam === "top") o.visible = showTop; else if (o.userData.seam === "bottom") o.visible = showBot; }); });
+  req();
+}
 function addFloor(i, j, f) {
   const st = stackOf(i, j), k = st.length, y = stackTop(i, j), g = floorGeo(f.t, f.s, f.v);
   const obj = meshSet(g, { kind: "floor", i, j, k });
@@ -350,6 +380,7 @@ function addFloor(i, j, f) {
   const rec = { t: f.t, s: f.s, v: f.v, r: f.r || 0, h: g.h, obj, wings: [] };
   floorsGroup.add(obj); st.push(rec); cells.set(K(i, j), st);
   (f.wings || []).forEach(w => attachWing(i, j, k, w));
+  refreshSeams(i, j);
   return rec;
 }
 function popFloor(i, j) {
@@ -358,7 +389,7 @@ function popFloor(i, j) {
   const gone = bridges.filter(b => (b.a[0] === i && b.a[1] === j && b.a[2] === k) || (b.b[0] === i && b.b[1] === j && b.b[2] === k));
   gone.forEach(dropBridge);
   floorsGroup.remove(f.obj); dispose(f.obj);
-  if (!st.length) cells.delete(K(i, j));
+  if (!st.length) cells.delete(K(i, j)); else refreshSeams(i, j);
   return { t: f.t, s: f.s, v: f.v, r: f.r, wings: f.wings.map(w => ({ d: w.d, t: w.t, s: w.s, v: w.v })), bridges: gone.map(b => ({ a: b.a, b: b.b })) };
 }
 /* 侧翼：挂在某层的某个面（d=0..3，楼层本地坐标的 +x +z -x -z），随楼层旋转缩放 */
