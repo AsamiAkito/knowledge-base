@@ -34,6 +34,7 @@ const config = {
   damping: .22,                                   // 旋转缓动（0–1，越大越跟手）
   recenterNear: 30,
   homeView: { tx: -1, tz: -1, theta: 45, phi: 37, dist: 43 },   // 打开网站时右下角的视角：拉近看中心城区
+  builtinWindows: false,                          // 楼层 / 方块是否自带窗（默认不带，窗户用贴图加）
   fadeNear: 12, fadeReach: 6,                     // 相机距离小于 fadeNear 才虚化；只虚化离镜头 fadeReach 格以内挡视线的楼                               // 相机距离小于它时视野可移到棋盘任意位置，大于它逐步回中
   thickness: 3,                                   // 棋盘厚度（格）
   digLevel: .16, digMax: 3, raiseMax: 300,         // 地面每层高度（= 一层楼高）、最多下挖 / 升高几层（山可以比最高的楼还高）
@@ -169,7 +170,7 @@ function floorGeo(t, s, v) {
     outline = lines(keep); ringTop = ringTop || lines(top); ringBottom = ringBottom || lines(bot);
   }
   const edges = merge([outline, facadeG, ringTop, ringBottom]);   // 全部线条（预览、连接体用）
-  const out = { solid: r.solid, edges, outline, facade: facadeG, panes: r.panes || null, h, w, ringTop, ringBottom };
+  const out = { solid: r.solid, edges, outline, facade: facadeG, panes: config.builtinWindows ? r.panes || null : null, h, w, ringTop, ringBottom };
   geoCache.set(key, out); return out;
 }
 
@@ -184,16 +185,16 @@ body("vfin", "竖向肋条", I('<rect x="5" y="4" width="14" height="16"/><path 
 body("louver", "横向百叶", I('<rect x="5" y="5" width="14" height="14"/><path d="M5 7.5h14M5 10h14M5 12.5h14M5 15h14M5 17.5h14"/>'),
   F.hlines(3), () => ({ s: "S" }));
 body("ribbon", "带形窗", I('<rect x="5" y="5" width="14" height="14"/><path d="M5 9h14M5 13h14"/><path d="M8 9v4M11 9v4M14 9v4M17 9v4"/>'),
-  F.all(F.band("M"), F.windows("M")), () => ({ s: "M" }));
+  F.band("M"), () => ({ s: "M" }));
 body("window", "窗户层", I('<rect x="5" y="6" width="14" height="12"/><path d="M7.5 9h3v5h-3zM13.5 9h3v5h-3z"/>'),
-  F.windows("M"), () => ({ s: "M" }));
+  null, () => ({ s: "M" }), { hidden: true });          // 不带窗后与实墙层相同：底部栏不显示，地标模板仍可用
 body("diagrid", "斜交网格", I('<rect x="5" y="4" width="14" height="16"/><path d="M5 4l7 16M12 4 5 20M12 4l7 16M19 4l-7 16"/>'),
   F.diag(3), () => ({ s: "S", step: WP * 2 }));
 body("curtain", "玻璃幕墙", I('<rect x="6" y="5" width="12" height="15"/><path d="M9 5v15M12 5v15M15 5v15M6 12h12"/>'),
   F.mullions("L", true), () => ({ s: "L", rot: true, step: WP }), { seamless: true });
 body("plain", "实墙层", I('<rect x="5" y="8" width="14" height="10"/>'), null, null);
 body("square", "正方形方格", I('<rect x="4" y="8" width="16" height="5.3"/><path d="M9.3 8v5.3M14.6 8v5.3"/><rect x="4" y="13.3" width="16" height="5.3"/><path d="M9.3 13.3v5.3M14.6 13.3v5.3"/>'),
-  F.all(F.mullions("L"), F.windows("L")), () => ({ s: "L" }));
+  F.mullions("L"), () => ({ s: "L" }));
 registerFloor({ id: "cube", name: "小方块", width: 1 / 6, height: 1 / 6, icon: I('<path d="M12 6l6 3.5v7L12 20l-6-3.5v-7z"/><path d="M6 9.5l6 3.5 6-3.5M12 13v7"/>'),
   build: ({ w, h, seed }) => ({ solid: box(w, h), panes: boxPanes(w, h, { seed, s: "S" }) }) });
 registerFloor({ id: "cubeS", name: "小方块（无缝）", width: 1 / 6, height: 1 / 6, seamless: true, icon: I('<path d="M12 3l5 2.8v12.4L12 21l-5-2.8V5.8z"/><path d="M7 5.8l5 2.8 5-2.8M12 8.6V21"/>'),
@@ -210,7 +211,7 @@ registerFloor({ id: "column", name: "圆柱塔身", seamless: true, icon: I('<pa
   } });
 registerFloor({ id: "podium", name: "裙楼大板", height: .32, icon: I('<rect x="3" y="7" width="18" height="12"/><path d="M3 13h18M9 7v12M15 7v12"/><circle cx="12" cy="10" r="1.6"/>'),
   build: ({ w, h, seed }) => {
-    return { solid: box(w, h), lines: facade(w, h, F.all(F.mullions("L"), F.windows("L"))), panes: boxPanes(w, h, { seed, s: "L" }) };
+    return { solid: box(w, h), lines: facade(w, h, F.mullions("L")), panes: boxPanes(w, h, { seed, s: "L" }) };
   } });
 registerFloor({ id: "setback", name: "收分层", icon: I('<rect x="8" y="8" width="8" height="10"/><path d="M5 18h14M10 8v10M12 8v10M14 8v10"/>'),
   build: ({ w, h, seed }) => { const s = w * .72; return { solid: box(s, h), lines: facade(s, h, F.mullions("M")), panes: boxPanes(s, h, { seed, s: "M" }) }; } });
@@ -342,7 +343,7 @@ const water = new Set(), grass = new Set();                // 河流（地形：
 const cells = new Map(), bridges = [], terrain = new Map();   // terrain: "i,j" → 地面高度层数（负 = 坑，正 = 高地）
 const hist = [], redoStack = [];
 let sel = Object.assign({ t: "grid", s: "M", r: 0 }, (() => { try { return JSON.parse(localStorage.getItem(KEY_SEL)) || {}; } catch (e) { return {}; } })());
-if (!FLOORS.has(sel.t)) sel.t = "grid";
+if (!FLOORS.has(sel.t) || FLOORS.get(sel.t).hidden) sel.t = "grid";
 sel.view = true; sel.tpl = null; sel.decal = null;
 if (!["S", "M", "L"].includes(sel.wsz)) sel.wsz = "M"; if (sel.wlit == null) sel.wlit = 1;
 const decalType = () => sel.decal === "window" ? "win:" + sel.wsz + ":" + (sel.wlit ? 1 : 0) + ":" + (sel.wrot ? 1 : 0) : sel.decal;                // 打开时默认观赏模式（鼠标按钮）
@@ -1545,7 +1546,7 @@ function mergeNeighbor({ i, j, k, d }) {
 function typing(t) { return t && t.closest && t.closest("input,textarea,select,[contenteditable]"); }
 function startHold(k, fn) { if (holds[k]) return; fn(); holds[k] = { t: setTimeout(() => { holds[k].i = setInterval(fn, config.repeatEvery); }, config.repeatDelay) }; }
 function stopHold(k) { const h = holds[k]; if (!h) return; clearTimeout(h.t); clearInterval(h.i); delete holds[k]; }
-function cycleType(d) { const k = ORDER.indexOf(sel.t); select(ORDER[(k + d + ORDER.length) % ORDER.length]); }
+function cycleType(d) { const O = ORDER.filter(id => !FLOORS.get(id).hidden), k = O.indexOf(sel.t); select(O[(k + d + O.length) % O.length]); }
 function cycleSize(d) { const ks = Object.keys(SIZES), k = ks.indexOf(sel.s); select(null, ks[Math.max(0, Math.min(ks.length - 1, k + d))]); }
 function rotateSel() { select(null, null, (sel.r || 0) + config.rotStep); }
 function doPlace() {
@@ -1675,7 +1676,7 @@ function renderBar() {
   if (!bar) return;
   bar.innerHTML = '<div class="cb-group"><button class="cb-btn' + (sel.view ? ' on' : '') + '" data-act="view" aria-label="浏览">' + MOUSE + '</button>'
     + '<button class="cb-btn" data-act="pure" aria-label="全览">' + FULL + '</button></div><span class="cb-sep"></span>'
-    + '<div class="cb-group cb-types">' + ORDER.map(id => { const d = FLOORS.get(id);
+    + '<div class="cb-group cb-types">' + ORDER.filter(id => !FLOORS.get(id).hidden).map(id => { const d = FLOORS.get(id);
       return '<button class="cb-btn' + (sel.t === id && !sel.tpl && !sel.decal && !sel.view ? ' on' : '') + '" data-t="' + id + '" aria-label="' + d.name + '">' + (d.icon || d.name.slice(0, 1)) + '</button>'; }).join("") + '</div>'
     + '<span class="cb-sep"></span><div class="cb-group">' + TORDER.map(id => { const d = TEMPLATES.get(id);
       return '<button class="cb-btn' + (sel.tpl === id ? ' on' : '') + '" data-tpl="' + id + '" aria-label="' + d.name + '">' + (d.icon || d.name.slice(0, 1)) + '</button>'; }).join("") + '</div>'
