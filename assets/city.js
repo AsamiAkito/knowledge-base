@@ -134,7 +134,7 @@ function roundPanes(rad, h, { s: size = "M", rot = false, seed = 1, lit = .72 } 
    def = {
      id, name, icon(24×24 线条 SVG 字符串),
      height: 数字 | (w)=>数字    层高（格，默认 1/6，与地块、小方块一致），可按占地宽度 w 计算
-     cap: true                    封顶层：上面不能再盖，也不能当侧翼
+     cap: true                    封顶层：上面不能再盖，也不能当侧翼（内置楼层目前都不封顶）
      width: 数字                   固定占地宽度（格），不随 S/M/L 变化（如 1/6 的小方块）
      seamless: true               无缝层：同类型、同尺寸、同朝向上下相叠时，层间不画横线，像一整根连续的塔身
                                   （上下边线自动从实体轮廓里拆出，也可在 build 里返回 ringTop / ringBottom 自定义）
@@ -225,31 +225,34 @@ registerFloor({ id: "round", name: "圆形层", win: { s: "M", round: true }, ic
   } });
 registerFloor({ id: "roofbox", name: "屋顶设备", height: 1 / 6, icon: I('<path d="M4 17h16"/><rect x="9" y="12" width="6" height="5"/><path d="M11 12v5M13 12v5"/>'),
   build: ({ w, h }) => ({ solid: merge([box(w * .92, .03), box(w * .34, h - .03, w * .34, .03, w * .15, -w * .12)]) }) });
-registerFloor({ id: "parapet", name: "平顶女儿墙", cap: true, height: .12, icon: I('<path d="M4 16h16v-3H4zM6 13v-2h12v2"/>'),
+/* 顶部造型：都不再封顶（上面还能继续叠），高度都是 1/6（U）的整数倍，造型和线条都收在层高以内 */
+const U = 1 / 6;
+registerFloor({ id: "parapet", name: "平顶女儿墙", height: U, icon: I('<path d="M4 16h16v-3H4zM6 13v-2h12v2"/>'),
   build: ({ w, h }) => ({ solid: merge([box(w, .04), box(w, h - .04, .03, .04, 0, w / 2 - .015), box(w, h - .04, .03, .04, 0, -w / 2 + .015), box(.03, h - .04, w, .04, w / 2 - .015), box(.03, h - .04, w, .04, -w / 2 + .015)]) }) });
-registerFloor({ id: "crown", name: "阶梯冠顶", cap: true, height: .7, icon: I('<path d="M5 20h14v-5H5zM7.5 15v-4h9v4M10 11V7h4v4M12 7V4"/>'),
-  build: ({ w }) => ({ solid: merge([box(w * .86, .22), box(w * .64, .22, w * .64, .22), box(w * .4, .22, w * .4, .44)]),
-    lines: merge([facade(w * .86, .22, F.cols(8)), facade(w * .64, .22, F.cols(6), { y0: .22 }), facade(w * .4, .22, F.cols(4), { y0: .44 }), lines([[0, .66, 0], [0, 1.05, 0]])]) }) });
-registerFloor({ id: "spire", name: "尖顶", cap: true, height: 1.3, icon: I('<path d="M12 3v3M8 20l4-14 4 14z"/><path d="M6 20h12"/>'),
-  build: ({ w }) => {
-    const base = box(w * .72, .12), py = new THREE.ConeGeometry(w * .34, 1.0, 4, 1); py.rotateY(Math.PI / 4); py.translate(0, .12 + .5, 0);
-    return { solid: merge([base, py]), lines: lines([[0, 1.12, 0], [0, 1.6, 0]]) };
+registerFloor({ id: "crown", name: "阶梯冠顶", height: 4 * U, icon: I('<path d="M5 20h14v-5H5zM7.5 15v-4h9v4M10 11V7h4v4M12 7V4"/>'),
+  build: ({ w, h }) => { const t = h / 4;                     // 三级台阶各一层，最上一层是旗杆
+    return { solid: merge([box(w * .86, t), box(w * .64, t, w * .64, t), box(w * .4, t, w * .4, 2 * t)]),
+      lines: merge([facade(w * .86, t, F.cols(8)), facade(w * .64, t, F.cols(6), { y0: t }), facade(w * .4, t, F.cols(4), { y0: 2 * t }), lines([[0, 3 * t, 0], [0, h, 0]])]) }; } });
+registerFloor({ id: "spire", name: "尖顶", height: 8 * U, icon: I('<path d="M12 3v3M8 20l4-14 4 14z"/><path d="M6 20h12"/>'),
+  build: ({ w, h }) => {
+    const base = box(w * .72, U), py = new THREE.ConeGeometry(w * .34, h - U, 4, 1); py.rotateY(Math.PI / 4); py.translate(0, U + (h - U) / 2, 0);
+    return { solid: merge([base, py]) };
   } });
 /* 天线：一根竖线（细到看不出粗细的实体只用来拾取），夜里不发光。
-   和小方块一样可在格内自由摆放，自动落在下方最高处：地面、楼顶（含穹顶等封顶层）、小方块顶上 */
-registerFloor({ id: "pole", name: "天线", cap: true, width: .012, height: .8, icon: I('<path d="M12 3v18"/>'),
+   和小方块一样可在格内自由摆放，自动落在下方最高处：地面、楼顶、穹顶顶点、小方块顶上 */
+registerFloor({ id: "pole", name: "天线", width: .012, height: 5 * U, icon: I('<path d="M12 3v18"/>'),
   build: ({ h }) => ({ solid: box(.012, h, .012), lines: lines([[0, 0, 0], [0, h, 0]]), autoEdges: false }) });
-registerFloor({ id: "antenna", name: "避雷针", cap: true, hidden: true, height: .3, icon: I('<path d="M12 3v9M10 6h4"/><rect x="9" y="12" width="6" height="4"/><path d="M5 20h14v-4H5z"/>'),
-  build: ({ w }) => ({ solid: merge([box(w * .92, .08), box(w * .34, .22, w * .34, .08)]),
-    lines: lines([[0, .3, 0], [0, 1.25, 0], [-.07, .95, 0], [.07, .95, 0], [0, .95, -.07], [0, .95, .07]]) }) });
-registerFloor({ id: "dome", name: "圆顶", cap: true, height: w => w * .45, icon: I('<path d="M5 17a7 7 0 0 1 14 0z"/><path d="M12 10v7M4 17h16"/>'),
-  build: ({ w }) => {
-    const r = w * .45, g = new THREE.SphereGeometry(r, 24, 10, 0, Math.PI * 2, 0, Math.PI / 2);
+registerFloor({ id: "antenna", name: "避雷针", hidden: true, height: 2 * U, icon: I('<path d="M12 3v9M10 6h4"/><rect x="9" y="12" width="6" height="4"/><path d="M5 20h14v-4H5z"/>'),
+  build: ({ w, h }) => ({ solid: merge([box(w * .92, U / 2), box(w * .34, U / 2, w * .34, U / 2)]),
+    lines: lines([[0, U, 0], [0, h, 0], [-.05, U * 1.6, 0], [.05, U * 1.6, 0], [0, U * 1.6, -.05], [0, U * 1.6, .05]]) }) });
+registerFloor({ id: "dome", name: "圆顶", height: w => Math.max(U, Math.round(w * .45 / U) * U), icon: I('<path d="M5 17a7 7 0 0 1 14 0z"/><path d="M12 10v7M4 17h16"/>'),
+  build: ({ w, h }) => {
+    const r = w * .45, k = h / r, g = new THREE.SphereGeometry(r, 24, 10, 0, Math.PI * 2, 0, Math.PI / 2); g.scale(1, k, 1);   // 半球压扁 / 拉高到层高
     const p = [...ring(r, 0)];
-    [.35, .65].forEach(t => { const a = t * Math.PI / 2; p.push(...ring(Math.cos(a) * r, Math.sin(a) * r)); });
+    [.35, .65].forEach(t => { const a = t * Math.PI / 2; p.push(...ring(Math.cos(a) * r, Math.sin(a) * r * k)); });
     for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2;
       for (let j = 0; j < 8; j++) { const b0 = j / 8 * Math.PI / 2, b1 = (j + 1) / 8 * Math.PI / 2;
-        p.push([Math.cos(b0) * r * Math.cos(a), Math.sin(b0) * r, Math.cos(b0) * r * Math.sin(a)], [Math.cos(b1) * r * Math.cos(a), Math.sin(b1) * r, Math.cos(b1) * r * Math.sin(a)]); } }
+        p.push([Math.cos(b0) * r * Math.cos(a), Math.sin(b0) * r * k, Math.cos(b0) * r * Math.sin(a)], [Math.cos(b1) * r * Math.cos(a), Math.sin(b1) * r * k, Math.cos(b1) * r * Math.sin(a)]); } }
     return { solid: g, lines: lines(p), autoEdges: false };
   } });
 
