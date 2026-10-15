@@ -290,6 +290,10 @@
   .kb-tree{position:sticky;top:82px;padding:14px 10px;max-height:calc(100vh - 110px);overflow:auto}
   body.editing .kb-tree{top:124px}
   .kb-tree .ph-title{padding:4px 8px 12px}
+  button.kb-root{border:0;background:none;width:100%;cursor:pointer;font-size:inherit;letter-spacing:inherit;text-align:left;transition:color var(--d1) var(--e-out)}
+  button.kb-root:hover,button.kb-root.on{color:var(--text)}
+  button.kb-root.on::before{width:22px}
+  .node .row .tree-name{flex:1;min-width:0;font:inherit;font-weight:500;color:var(--text);background:var(--card);border:1px solid var(--accent);border-radius:4px;padding:2px 6px;outline:none}
   .tree-tools{display:flex;gap:4px;padding:0 6px 10px;flex-wrap:wrap}
   .tree-tools button{flex:1;min-width:0;border:1px solid var(--line);background:transparent;color:var(--text-dim);
     cursor:pointer;font-size:12px;padding:6px 4px;border-radius:var(--r);transition:all var(--d2) var(--e-out);white-space:nowrap}
@@ -1292,6 +1296,9 @@ function renderFeed(){
 function treeHTML(nodes,depth){
   return nodes.filter(n=>state.editMode||!n.hidden).map(n=>{
     const pad='style="padding-left:'+(9+depth*15)+'px"';const hid=n.hidden?' hidden-item':'';const eye=n.hidden?'<span class="eye">隐藏</span>':'';
+    if(state.kbNaming===n.id){const open=state.expanded.has(n.id);
+      return '<div class="node"><div class="row sel" '+pad+'><span class="ic">'+(n.type==="folder"?(open?'▾':'▸'):'●')+'</span><input class="tree-name" data-id="'+n.id+'" value="'+esc(n.name)+'" spellcheck="false"></div>'
+        +(n.type==="folder"&&open?'<div>'+treeHTML(n.children||[],depth+1)+'</div>':'')+'</div>';}
     if(n.type==="folder"){
       const open=state.expanded.has(n.id);const sel=state.kbSel===n.id;
       return '<div class="node"><div class="row'+(sel?' sel':'')+hid+'" '+pad+' data-action="kb-folder" data-id="'+n.id+'"><span class="ic">'+(open?'▾':'▸')+'</span><span>'+esc(n.name)+'</span>'+eye+'</div>'+(open?'<div>'+treeHTML(n.children||[],depth+1)+'</div>':'')+'</div>';
@@ -1554,8 +1561,9 @@ document.addEventListener("input",e=>{
 function renderKB(){
   if(state.editingFile&&rteEl())captureFileBuf();
   _hl=0;
-  if(!state.kbSel||!locate(state.kbSel))state.kbSel=firstFile();
-  const loc=state.kbSel?locate(state.kbSel):null;
+  if(state.kbSel)state.kbRoot=false;
+  if(!state.kbRoot&&(!state.kbSel||!locate(state.kbSel)))state.kbSel=firstFile();
+  const loc=state.kbRoot?{node:{type:"folder",name:"知识库",children:DATA.kb,root:true},trail:[]}:state.kbSel?locate(state.kbSel):null;
   const node=loc?loc.node:null;const em=state.editMode;
   const tools=em?'<div class="tree-tools"><button data-action="kb-newfolder">＋文件夹</button><button data-action="kb-newfile">＋文件</button><button data-action="kb-import">导入</button></div>':'';
   let mid;
@@ -1578,7 +1586,7 @@ function renderKB(){
   } else {
     const crumb=loc.trail.map(t=>esc(t.name)).join('<span class="dot">/</span>');
     const kids=(node.children||[]).filter(n=>em||!n.hidden);
-    const dtools=em?'<div class="doc-tools"><button class="btn sm link" data-action="kb-rename" data-id="'+node.id+'">重命名</button>'
+    const dtools=em&&!node.root?'<div class="doc-tools"><button class="btn sm link" data-action="kb-rename" data-id="'+node.id+'">重命名</button>'
       +'<button class="btn sm link" data-action="kb-move" data-id="'+node.id+'">移动</button>'
       +'<button class="btn sm link" data-action="kb-hide" data-id="'+node.id+'">'+(node.hidden?'取消隐藏':'隐藏')+'</button>'
       +'<button class="btn sm danger" data-action="kb-delete" data-id="'+node.id+'">删除</button></div>':'';
@@ -1589,11 +1597,12 @@ function renderKB(){
   const notes=node&&node.type==="file"?viewDoc(node).notes:[];
   const notesHTML=editing?notesEditHTML():'<div class="ph-title">NOTES</div>'+notes.map((nt,idx)=>'<div class="sticky" id="note-'+(idx+1)+'" data-action="kb-note" data-n="'+(idx+1)+'"><span class="n">'+(idx+1)+'</span>'+esc(nt)+'</div>').join("");
   const showNotes=editing||notes.length>0;
-  app.innerHTML='<div class="kb'+(showNotes?'':' no-notes')+'"><aside class="panel kb-tree"><div class="ph-title">DIRECTORY</div>'+tools+treeHTML(DATA.kb,0)+'</aside>'
+  app.innerHTML='<div class="kb'+(showNotes?'':' no-notes')+'"><aside class="panel kb-tree"><button class="ph-title kb-root'+(state.kbRoot?' on':'')+'" data-action="kb-root">DIRECTORY</button>'+tools+treeHTML(DATA.kb,0)+'</aside>'
     +'<section class="panel kb-main">'+mid+'</section>'
     +(showNotes?'<aside class="panel kb-notes">'+notesHTML+'</aside>':'')
     +'<aside class="rail"><div class="rail-scroll">'+railContribHTML()+'</div></aside></div>';
   hydrateContrib();
+  const nm=state.kbNaming&&$(".tree-name");if(nm){nm.focus();nm.select();}
   if(editing){document.execCommand("defaultParagraphSeparator",false,"p");document.querySelectorAll(".kb-notes textarea").forEach(autoSize);updateTb();}
   scheduleLines();
 }
@@ -1745,6 +1754,16 @@ function moveNode(id,target){const loc=locate(id);if(!loc)return;const rec=loc.p
 
 function flashPair(a,b){const t=document.getElementById(a),o=document.getElementById(b);if(t){t.scrollIntoView({behavior:"smooth",block:"center"});t.classList.add("flash");setTimeout(()=>t.classList.remove("flash"),1200);}if(o){o.classList.add("flash");setTimeout(()=>o.classList.remove("flash"),1200);}}
 
+function kbNameDone(inp,keep){
+  const id=inp.dataset.id;if(state.kbNaming!==id)return;state.kbNaming=null;
+  const l=locate(id);if(l&&!keep){const nm=inp.value.trim()||l.node.name;l.node.name=nm;
+    if(state.editingFile&&state.kbSel===id){if(state.fileBuf)state.fileBuf.name=nm;const fe=$("#fe-name");if(fe)fe.value=nm;}
+    saveDraft();}
+  renderKB();
+}
+document.addEventListener("keydown",e=>{const t=e.target;if(!t.classList||!t.classList.contains("tree-name")||e.isComposing)return;
+  if(e.key==="Enter"){e.preventDefault();kbNameDone(t);}else if(e.key==="Escape"){e.preventDefault();kbNameDone(t,true);}});
+document.addEventListener("focusout",e=>{const t=e.target;if(t.classList&&t.classList.contains("tree-name"))kbNameDone(t);});
 document.addEventListener("click",e=>{
   const el=e.target.closest("[data-action]");if(!el)return;const a=el.dataset.action;const id=el.dataset.id;
   switch(a){
@@ -1823,10 +1842,11 @@ document.addEventListener("click",e=>{
     case "kb-open":{state.kbSel=id;state.editingFile=false;renderKB();const n=matchMedia("(max-width:760px)").matches&&$(".kb-main");if(n)n.scrollIntoView({behavior:"smooth",block:"start"});return;}
     case "kb-hl":flashPair("note-"+el.dataset.n,"hl-"+el.dataset.n);return;
     case "kb-note":flashPair("hl-"+el.dataset.n,"note-"+el.dataset.n);return;
-    case "kb-newfolder":{const nm=prompt("新文件夹名称：","新文件夹");if(nm){const n={id:uid(),type:"folder",name:nm.trim()||"新文件夹",children:[]};targetChildren().push(n);state.kbSel=n.id;state.expanded.add(n.id);saveDraft();renderKB();}return;}
-    case "kb-newfile":{const nm=prompt("新文件名称：","新文件");if(nm){const n={id:uid(),type:"file",fmt:"html",name:nm.trim()||"新文件",tags:[],body:"",notes:[]};targetChildren().push(n);state.kbSel=n.id;state.editingFile=true;state.fmtOn=new Set();state.fileBuf={name:n.name,tags:[],html:"",notes:[]};saveDraft();renderKB();}return;}
+    case "kb-root":state.kbSel=null;state.kbRoot=true;state.editingFile=false;renderKB();return;
+    case "kb-newfolder":{const n={id:uid(),type:"folder",name:"新文件夹",children:[]};targetChildren().push(n);state.kbSel=n.id;state.expanded.add(n.id);state.editingFile=false;state.kbNaming=n.id;saveDraft();renderKB();return;}
+    case "kb-newfile":{const n={id:uid(),type:"file",fmt:"html",name:"新文件",tags:[],body:"",notes:[]};targetChildren().push(n);state.kbSel=n.id;state.editingFile=true;state.fmtOn=new Set();state.fileBuf={name:n.name,tags:[],html:"",notes:[]};state.kbNaming=n.id;saveDraft();renderKB();return;}
     case "kb-import":$("#importInput").click();return;
-    case "kb-rename":{const l=locate(id);if(l){const nm=prompt("重命名：",l.node.name);if(nm){l.node.name=nm.trim()||l.node.name;saveDraft();renderKB();}}return;}
+    case "kb-rename":{const l=locate(id);if(l){l.trail.forEach(t=>t.id&&t.type==="folder"&&t.id!==id&&state.expanded.add(t.id));state.kbNaming=id;renderKB();}return;}
     case "kb-move":openMove(id);return;
     case "move-pick":{if(state.moving){moveNode(state.moving,el.dataset.target);state.kbSel=state.moving;state.moving=null;saveDraft();closeModals();renderKB();toast("已移动");}return;}
     case "kb-hide":{const l=locate(id);if(l){l.node.hidden=!l.node.hidden;saveDraft();renderKB();}return;}
